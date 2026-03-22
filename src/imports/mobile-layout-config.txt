@@ -1,0 +1,73 @@
+update_existing_design: true
+
+apply_responsive_system_globally: true
+apply_to_pages:
+  - Dashboard
+  - Reports
+  - Inventory
+  - Settings
+
+breakpoints:
+  mobile_max_width: 768px
+
+global_mobile_layout:
+  sidebar:
+    hide_on_mobile: true
+    convert_to_drawer:
+      trigger: hamburger_icon_in_header
+      width: 260px
+      slide_from: left
+      overlay: true
+
+  header:
+    sticky_on_mobile: true
+    layout:
+      left: hamburger_menu
+      center: page_title
+      right: profile_avatar
+
+  content_container:
+    padding_mobile: 16px
+    max_width_mobile: 100%
+    remove_fixed_desktop_margins: true
+
+page_specific_mobile_rules:
+
+  reports_page:
+    filters:
+      stack_vertically: true
+      date_range_inputs: two_rows
+      apply_reset_buttons:
+        full_width_apply: true
+        reset_as_text_button: true
+    charts:
+      single_column_only: true
+      chart_height: 260px
+    tables:
+      use_horizontal_scroll_wrapper: true
+
+  inventory_page:
+    replace_table_with_mobile_cards: true
+    mobile_cards:
+      card_fields:
+        - Product
+        - Today Produced
+        - Current Stock
+        - Status
+      layout:
+        two_column_metrics: true
+        status_badge_right: true
+    keep_desktop_table_for_desktop_view: true
+
+  settings_page:
+    forms:
+      stack_fields_vertically: true
+      inputs_full_width: true
+    item_management_table:
+      mobile_view: "card_list"
+      keep_desktop_table_for_desktop: true
+
+ui_consistency:
+  ensure_all_pages_use_same_mobile_header: true
+  ensure_all_pages_use_same_drawer_menu: true
+  ensure_all_pages_use_same_spacing_scale: true

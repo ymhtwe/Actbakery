@@ -1,0 +1,67 @@
+update_existing_design: true
+target_pages:
+  - "Reports"
+  - "Dashboard"
+  - "Inventory"
+  - "Settings"
+  - "Admin Data Entry"
+
+global_responsive_rules:
+  create_breakpoints:
+    - name: "Mobile"
+      width: 390
+    - name: "Tablet"
+      width: 768
+    - name: "Desktop"
+      width: 1280
+  use_auto_layout_everywhere: true
+  use_constraints_everywhere: true
+  right_content_scroll_only: true
+  left_sidebar_fixed:
+    desktop: true
+    tablet: true
+  mobile_navigation:
+    replace_sidebar_with_drawer: true
+    hamburger_top_left: true
+    drawer_items_order:
+      - Dashboard
+      - Reports
+      - Data Entry
+      - Inventory
+      - Settings
+      - Logout
+
+reports_mobile_fix:
+  rebuild_reports_header_for_mobile: true
+
+  filters_section_mobile_layout:
+    card_full_width: true
+    stack_fields_vertical: true
+    spacing: 12
+    fields_order:
+      - date_start
+      - date_end
+      - item_dropdown
+    buttons_row:
+      layout: "two_columns"
+      left: "Apply"
+      right: "Reset"
+      full_width_buttons: true
+
+  quick_range_chips_mobile:
+    wrap_to_multiple_rows: true
+    chip_size: "small"
+    show_more_button_if_overflow: true
+
+  tabs_mobile:
+    layout: "segmented_control"
+    full_width: true
+    sticky_below_filters: true
+
+  charts_mobile:
+    card_full_width: true
+    chart_height: 220
+    reduce_padding: true
+    enable_horizontal_scroll_for_wide_tables: true
+
+  ensure_no_horizontal_scroll_on_mobile: true

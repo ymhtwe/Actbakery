@@ -1,0 +1,51 @@
+update_existing_design: true
+
+sidebar_update:
+  add_menu_item:
+    name: "Settings"
+    icon: "gear"
+    position_after: "Inventory"
+
+create_new_page:
+  name: "Settings Page"
+  layout: standard_admin_layout
+  header:
+    title: "Settings"
+    subtitle: "Manage products and system configuration"
+
+page_content:
+
+  section_1:
+    title: "Item Management"
+    description: "Create, edit, and delete bakery items"
+    header_actions:
+      - button:
+          text: "+ Add Item"
+          style: primary
+
+    table:
+      columns:
+        - Item Name
+        - Current Stock
+        - Low Stock Threshold
+        - Status
+        - Actions
+
+      actions_column_buttons:
+        - Edit
+        - Delete
+
+modal_design:
+  name: "Add / Edit Item Modal"
+  fields:
+    - Item Name (text input)
+    - Initial Stock (number input)
+    - Low Stock Threshold (number input)
+  buttons:
+    - Save (primary)
+    - Cancel (secondary)
+
+interaction_rules:
+  clicking_add_item_opens_modal: true
+  clicking_edit_opens_prefilled_modal: true
+  clicking_delete_shows_confirmation: true

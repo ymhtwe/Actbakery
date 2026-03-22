@@ -1,0 +1,62 @@
+update_existing_design: true
+target_page: "Staff Data Entry"
+
+remove:
+  - analytics_elements
+  - admin_style_cards
+  - search_bar_in_scanned_list
+
+layout_redesign:
+
+  page_type: simplified_pos_interface
+
+  header:
+    title: "Staff Data Entry"
+    subtitle: "Production Entry"
+    show_sidebar: false
+    show_logout_button: true
+
+  section_1:
+    name: "Scan Mode"
+    style: primary_card
+    elements:
+      - large_input_field:
+          placeholder: "Scan or enter barcode..."
+          auto_focus: true
+      - primary_button:
+          text: "Scan / Add"
+          full_width_mobile: true
+
+      - scanned_items_list:
+          style: compact_rows
+          row_elements:
+            - item_name
+            - quantity
+            - minus_button
+            - plus_button
+            - remove_icon
+
+  section_2:
+    name: "Manual Entry"
+    style: secondary_card
+    elements:
+      - dropdown:
+          label: "Select Item"
+      - number_input:
+          label: "Quantity"
+      - button:
+          text: "Add to List"
+
+  bottom_sticky_panel:
+    show: true
+    elements:
+      - total_quantity_display
+      - clear_all_button
+      - submit_batch_button:
+          style: primary
+          full_width_mobile: true
+
+interaction_rules:
+  scanning_same_item_increases_quantity: true
+  manual_add_merges_existing_item: true
+  submit_clears_list_after_success: true

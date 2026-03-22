@@ -1,0 +1,53 @@
+force_mobile_rebuild: true
+target_page: "Reports"
+
+ignore_previous_mobile_layout: true
+recreate_mobile_frame_from_scratch: true
+
+mobile_frame_width: 390
+mobile_layout_rules:
+
+  remove_desktop_constraints: true
+  remove_fixed_width_containers: true
+
+  structure:
+    stack_everything_vertical: true
+    content_padding: 16px
+    gap_between_sections: 16px
+
+  filters_section:
+    full_width_card: true
+    layout: vertical_stack
+    spacing: 12px
+
+    fields_order:
+      - start_date
+      - end_date
+      - item_dropdown
+
+    apply_button:
+      full_width: true
+      height: 44px
+
+    reset_button:
+      full_width: true
+      style: secondary
+      margin_top: 8px
+
+  quick_range_chips:
+    wrap: true
+    allow_multi_line: true
+    chip_height: 32px
+
+  tabs:
+    convert_to_segmented_control: true
+    full_width: true
+    height: 40px
+
+  chart_section:
+    full_width: true
+    fixed_height: 220px
+    no_horizontal_overflow: true
+
+  enforce_no_horizontal_scroll:
+    page_wrapper_overflow_x: hidden

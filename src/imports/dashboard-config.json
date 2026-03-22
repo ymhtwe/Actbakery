@@ -1,0 +1,55 @@
+update_existing_dashboard: true
+
+dashboard_structure:
+
+  row_1:
+    type: product_summary_grid
+    columns: 4
+    rows: 2
+    products:
+      - ဖရုံ
+      - ကိတ်စို
+      - d/c ကြီး
+      - d/c သေး
+      - နကထိုင်
+      - Bကြီး
+      - ယို၅
+      - ယို၉
+    card_content:
+      - product_name
+      - today_produced
+      - current_stock
+      - status_badge
+
+  row_2:
+    type: bar_chart
+    title: "Today Production by Product"
+    x_axis: product_names
+    y_axis: quantity
+
+  row_3:
+    type: alert_panel
+    title: "Low Stock Alerts"
+    show_items_where_stock_below: 10
+    highlight_color: soft_red
+
+  row_4:
+    type: line_chart
+    title: "Production vs Sales"
+    compare:
+      - production
+      - sales
+
+design_rules:
+  - remove donut chart
+  - remove generic KPI cards
+  - use white background
+  - use champagne gold accent
+  - use subtle shadows
+  - keep spacing clean
+  - use status badges (green, yellow, red)
+
+status_colors:
+  in_stock: "#16A34A"
+  low_stock: "#F59E0B"
+  critical: "#DC2626"
