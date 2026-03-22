@@ -111,8 +111,8 @@ export function SalesContent() {
   const [searchTerm, setSearchTerm] = useState("");
 
   // Filter state
-  const defaults = getDefaultDates("7 Days");
-  const [selectedRange, setSelectedRange] = useState("7 Days");
+  const defaults = getDefaultDates("All");
+  const [selectedRange, setSelectedRange] = useState("All");
   const [dateFrom, setDateFrom] = useState(defaults.from);
   const [dateTo, setDateTo] = useState(defaults.to);
   const [selectedItem, setSelectedItem] = useState(ALL_ITEMS_LABEL);
@@ -179,11 +179,11 @@ export function SalesContent() {
   };
 
   const handleReset = () => {
-    setSelectedRange("7 Days");
+    setSelectedRange("All");
     setSelectedItem(ALL_ITEMS_LABEL);
     setSelectedCustomer(ALL_CUSTOMERS_LABEL);
     setSearchTerm("");
-    const d = getDefaultDates("7 Days");
+    const d = getDefaultDates("All");
     setDateFrom(d.from);
     setDateTo(d.to);
   };

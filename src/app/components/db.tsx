@@ -408,7 +408,7 @@ export async function deleteCustomer(id: string) {
 // ════════════════════════════════════
 //  DAILY PRODUCTION (for charts)
 // ════════════════════════════════════
-export async function getDailyProduction(days = 30) {
+export async function getDailyProduction(days?: number) {
   // Get active items
   const { data: items, error: itemsErr } = await supabase
     .from("items")
@@ -432,8 +432,23 @@ export async function getDailyProduction(days = 30) {
     itemNames.push(item.name);
   }
 
+  // If no days specified, compute from earliest production log
+  let numDays = days || 30;
+  if (!days && prodLogs && prodLogs.length > 0) {
+    let earliest = today;
+    for (const log of prodLogs) {
+      const logDate = getDateFromRow(log as any, "produced_at");
+      if (logDate) {
+        const d = new Date(logDate + "T00:00:00");
+        if (!isNaN(d.getTime()) && d < earliest) earliest = d;
+      }
+    }
+    const diffMs = today.getTime() - earliest.getTime();
+    numDays = Math.max(30, Math.ceil(diffMs / (1000 * 60 * 60 * 24)) + 1);
+  }
+
   const result: any[] = [];
-  for (let i = days - 1; i >= 0; i--) {
+  for (let i = numDays - 1; i >= 0; i--) {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
     const dateStr = localDateStr(d);

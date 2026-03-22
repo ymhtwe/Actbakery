@@ -14,9 +14,18 @@ interface FilterBarProps {
   onDateToChange: (d: string) => void;
   /** Dynamic item names from the database */
   itemNames?: string[];
+  /** Hide the "All Items" option from dropdown */
+  hideAllItems?: boolean;
 }
 
-const QUICK_RANGES = ["7 Days", "14 Days", "30 Days", "This Month", "Custom"];
+const QUICK_RANGES = [
+  { value: "Today", label: "\u101a\u1014\u1031\u1037" },
+  { value: "7 Days", label: "\u1047 \u101b\u1000\u103a" },
+  { value: "14 Days", label: "\u1041\u1044 \u101b\u1000\u103a" },
+  { value: "30 Days", label: "\u1043\u1040 \u101b\u1000\u103a" },
+  { value: "This Month", label: "\u1024\u101c" },
+  { value: "All", label: "\u1021\u102c\u1038\u101c\u102f\u1036\u1038" },
+];
 const ALL_ITEMS_LABEL = "ပစ္စည်းအမျိုးအစားများ";
 const ALL_ITEMS_DROPDOWN_LABEL = "ပစ္စည်း အားလုံး";
 
@@ -32,8 +41,9 @@ export function FilterBar({
   onDateFromChange,
   onDateToChange,
   itemNames,
+  hideAllItems,
 }: FilterBarProps) {
-  const ITEMS = [ALL_ITEMS_LABEL, ...(itemNames || [])];
+  const ITEMS = hideAllItems ? (itemNames || []) : [ALL_ITEMS_LABEL, ...(itemNames || [])];
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const mobileDropRef = useRef<HTMLDivElement>(null);
   const desktopDropRef = useRef<HTMLDivElement>(null);
@@ -241,21 +251,19 @@ export function FilterBar({
 
         {/* Row 2: Quick range chips — wraps to multi-line, 32px height */}
         <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-          <span className="text-[#9CA3AF] mr-1" style={{ fontSize: "0.75rem" }}>
-            Quick:
-          </span>
+          <span className="text-[#9CA3AF] mr-1" style={{ fontSize: "0.75rem" }}>အမြန်ရွေးရန်:</span>
           {QUICK_RANGES.map((r) => (
             <button
-              key={r}
-              onClick={() => onRangeChange(r)}
+              key={r.value}
+              onClick={() => onRangeChange(r.value)}
               className={`px-3.5 rounded-full border transition-all cursor-pointer ${
-                selectedRange === r
+                selectedRange === r.value
                   ? "bg-[#FAF6EC] text-[#B8943C] border-[#D6B25E]/40"
                   : "bg-white text-[#6B7280] border-[#E5E7EB] hover:bg-[#FAF6EC] hover:text-[#1F2937]"
               }`}
               style={{ fontSize: "0.8rem", height: "32px" }}
             >
-              {r}
+              {r.label}
             </button>
           ))}
           {selectedItem !== ALL_ITEMS_LABEL && (

@@ -96,11 +96,13 @@ function getDefaultDates(range: string) {
   const to = new Date();
   const from = new Date();
   switch (range) {
+    case "Today": break;
     case "7 Days": from.setDate(to.getDate() - 6); break;
     case "14 Days": from.setDate(to.getDate() - 13); break;
     case "30 Days": from.setDate(to.getDate() - 29); break;
     case "This Month": from.setDate(1); break;
-    default: from.setDate(to.getDate() - 6);
+    case "All": from.setFullYear(2020); break;
+    default: from.setFullYear(2020);
   }
   const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   return {
@@ -131,8 +133,8 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
   const [saving, setSaving] = useState(false);
 
   // Filter state
-  const defaults = getDefaultDates("7 Days");
-  const [selectedRange, setSelectedRange] = useState("7 Days");
+  const defaults = getDefaultDates("All");
+  const [selectedRange, setSelectedRange] = useState("All");
   const [selectedItem, setSelectedItem] = useState(ALL_ITEMS_LABEL);
   const [dateFrom, setDateFrom] = useState(defaults.from);
   const [dateTo, setDateTo] = useState(defaults.to);
@@ -179,7 +181,7 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
       const [stockData, itemsData, daily] = await Promise.all([
         db.getStockWithToday(),
         db.getItems(),
-        db.getDailyProduction(30),
+        db.getDailyProduction(),
       ]);
 
       setItems(itemsData);
@@ -222,9 +224,9 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
   };
 
   const handleReset = () => {
-    setSelectedRange("7 Days");
+    setSelectedRange("All");
     setSelectedItem(ALL_ITEMS_LABEL);
-    const d = getDefaultDates("7 Days");
+    const d = getDefaultDates("All");
     setDateFrom(d.from);
     setDateTo(d.to);
   };
@@ -233,8 +235,8 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
     setActiveTab("reports");
     setReportTab("byItem");
     setSelectedItem(itemName);
-    setSelectedRange("7 Days");
-    const d = getDefaultDates("7 Days");
+    setSelectedRange("All");
+    const d = getDefaultDates("All");
     setDateFrom(d.from);
     setDateTo(d.to);
   };
@@ -771,12 +773,12 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
 
                     {/* Daily Summary Table */}
                     <div className="bg-white rounded-[12px] border border-[#E5E7EB] shadow-[0_1px_3px_rgba(0,0,0,0.04)] p-3 sm:p-7 overflow-hidden max-w-full">
-                      <h4 className="text-[#1F2937] mb-3 sm:mb-5">Daily Summary</h4>
+                      <h4 className="text-[#1F2937] mb-3 sm:mb-5">နေ့စဥ်အချုပ်</h4>
                       <div className="overflow-auto w-full" style={{ maxHeight: "480px", WebkitOverflowScrolling: "touch" as any }}>
                         <table className="w-full border-collapse" style={{ minWidth: "580px" }}>
                           <thead className="sticky top-0 z-[2]">
                             <tr className="bg-white">
-                              <th className="text-left py-3 px-3 text-[#6B7280] sticky left-0 bg-white z-[3] border-b-2 border-[#E5E7EB]" style={{ fontSize: "0.8rem", minWidth: "70px" }}>Date</th>
+                              <th className="text-left py-3 px-3 text-[#6B7280] sticky left-0 bg-white z-[3] border-b-2 border-[#E5E7EB]" style={{ fontSize: "0.8rem", minWidth: "70px" }}>ရက်စွဲ</th>
                               {products.map((p) => {
                                 const isHL = selectedItem !== ALL_ITEMS_LABEL && selectedItem === p.name;
                                 const isFd = selectedItem !== ALL_ITEMS_LABEL && selectedItem !== p.name;
@@ -784,7 +786,7 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
                                   <th key={p.id} className={`text-center py-3 px-2.5 whitespace-nowrap border-b-2 bg-white transition-all duration-200 ${isHL ? "text-[#B8943C] font-bold border-[#D6B25E]" : isFd ? "text-[#D1D5DB] border-[#E5E7EB]" : "text-[#6B7280] border-[#E5E7EB]"}`} style={{ fontSize: "0.8rem" }}>{p.name}</th>
                                 );
                               })}
-                              <th className={`text-center py-3 px-3 whitespace-nowrap border-b-2 bg-white transition-all duration-200 ${selectedItem !== ALL_ITEMS_LABEL ? "text-[#D1D5DB] border-[#E5E7EB]" : "text-[#1F2937] border-[#E5E7EB]"}`} style={{ fontSize: "0.8rem" }}>Total</th>
+                              <th className={`text-center py-3 px-3 whitespace-nowrap border-b-2 bg-white transition-all duration-200 ${selectedItem !== ALL_ITEMS_LABEL ? "text-[#D1D5DB] border-[#E5E7EB]" : "text-[#1F2937] border-[#E5E7EB]"}`} style={{ fontSize: "0.8rem" }}>စုစုပေါင်း</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -804,7 +806,7 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
                           </tbody>
                           <tfoot className="sticky bottom-0 z-[2]">
                             <tr className="bg-[#FAF6EC] border-t-2 border-[#D6B25E]/40">
-                              <td className="py-3 px-3 text-[#1F2937] font-semibold sticky left-0 bg-[#FAF6EC] z-[3]" style={{ fontSize: "0.8rem", minWidth: "70px" }}>Total</td>
+                              <td className="py-3 px-3 text-[#1F2937] font-semibold sticky left-0 bg-[#FAF6EC] z-[3]" style={{ fontSize: "0.8rem", minWidth: "70px" }}>စုစုပေါင်း</td>
                               {products.map((p) => {
                                 const colTotal = filteredDaily.reduce((sum: number, d: any) => sum + ((d[p.name] as number) || 0), 0);
                                 const isHL = selectedItem !== ALL_ITEMS_LABEL && selectedItem === p.name;
@@ -827,23 +829,23 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
                 {/* By Item Tab */}
                 {reportTab === "byItem" && (
                   <div className="space-y-4 sm:space-y-6 overflow-x-hidden">
-                    <FilterBar {...filterProps} />
+                    <FilterBar {...filterProps} hideAllItems />
 
                     {selectedItem === ALL_ITEMS_LABEL ? (
                       <div className="bg-white rounded-[12px] border border-[#E5E7EB] shadow-[0_1px_3px_rgba(0,0,0,0.04)] p-8 sm:p-10 text-center">
                         <Package className="w-12 h-12 mx-auto text-[#E8D5A0] mb-3" />
-                        <p className="text-[#1F2937] mb-1">Select an item</p>
-                        <p className="text-[#9CA3AF]" style={{ fontSize: "0.85rem" }}>Use the Item filter above to view detailed trends for a specific product.</p>
+                        <p className="text-[#1F2937] mb-1">ပစ္စည်း ရွေးပါ</p>
+                        <p className="text-[#9CA3AF]" style={{ fontSize: "0.85rem" }}>အပေါ်ရှန် ပစ္စည်းအမျိုးအစား ရွေးချယ်ပြီး အသေးစိတ် ကြည့်ရှုပါ။</p>
                       </div>
                     ) : (
                       <>
                         {byItemStats && (
                           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
                             {[
-                              { label: "Total Produced", value: byItemStats.total },
-                              { label: "Average per Day", value: byItemStats.avg },
-                              { label: "Highest Day", value: byItemStats.highest },
-                              { label: "Lowest Day", value: byItemStats.lowest },
+                              { label: "\u1005\u102f\u1005\u102f\u1015\u1031\u102b\u1004\u103a\u1038 \u1011\u102f\u1010\u103a\u101c\u102f\u1015\u103a\u1019\u103e\u102f", value: byItemStats.total },
+                              { label: "\u1015\u103b\u1019\u103a\u1038\u1019\u103b\u103e / \u101b\u1000\u103a", value: byItemStats.avg },
+                              { label: "\u1021\u1019\u103c\u1004\u103a\u1037\u1006\u102f\u1036\u1038\u101b\u1000\u103a", value: byItemStats.highest },
+                              { label: "\u1021\u1014\u102d\u1019\u103a\u1037\u1006\u102f\u1036\u1038\u101b\u1000\u103a", value: byItemStats.lowest },
                             ].map((s) => (
                               <div key={s.label} className="bg-white rounded-[12px] border border-[#E5E7EB] shadow-[0_1px_3px_rgba(0,0,0,0.04)] p-4 sm:p-5">
                                 <p className="text-[#9CA3AF]" style={{ fontSize: "0.75rem" }}>{s.label}</p>
@@ -854,7 +856,7 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
                         )}
 
                         <div className="bg-white rounded-[12px] border border-[#E5E7EB] shadow-[0_1px_3px_rgba(0,0,0,0.04)] p-3 sm:p-7 overflow-hidden">
-                          <h4 className="text-[#1F2937] mb-3 sm:mb-5">{selectedItem} — Daily Trend</h4>
+                          <h4 className="text-[#1F2937] mb-3 sm:mb-5">{selectedItem} — နေ့စဥ်အလိုက်</h4>
                           {filteredDaily.length > 0 ? (
                             <div style={{ width: "100%", height: reportChartHeight }}>
                               <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100}>
@@ -873,13 +875,13 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
                         </div>
 
                         <div className="bg-white rounded-[12px] border border-[#E5E7EB] shadow-[0_1px_3px_rgba(0,0,0,0.04)] p-3 sm:p-7 overflow-hidden">
-                          <h4 className="text-[#1F2937] mb-3 sm:mb-5">Day-by-Day Counts</h4>
+                          <h4 className="text-[#1F2937] mb-3 sm:mb-5">ရက်စွဲအလိုက် အရေအတွက်</h4>
                           <div className="overflow-x-auto w-full">
                             <table className="w-full">
                               <thead>
                                 <tr className="border-b border-[#E5E7EB]">
-                                  <th className="text-left py-3 px-4 text-[#6B7280]">Date</th>
-                                  <th className="text-center py-3 px-4 text-[#6B7280]">Quantity</th>
+                                  <th className="text-left py-3 px-4 text-[#6B7280]">ရက်စွဲ</th>
+                                  <th className="text-center py-3 px-4 text-[#6B7280]">အရေအတွက်</th>
                                 </tr>
                               </thead>
                               <tbody>

@@ -339,7 +339,9 @@ export function DataEntryContent({ role = "staff", onNavigate }: DataEntryProps)
     // Sum already-added qty for same item
     const existingQty = saleItems.filter((si) => si.itemId === saleItemPickId).reduce((s, i) => s + i.quantity, 0);
     if (existingQty + qty > stock) {
-      setSaleError(`လက်ကျန် မလောက်ပါ။ ${saleItemPick} အတွက် ${stock} ခုသာ ရှိပြီး ${existingQty} ခု ထည့်ပြီးပါပြီ။`);
+      const msg = `ရောင်းချရန် ပစ္စည်း လက်ကျန်မလုံလောက်ပါ။ ${saleItemPick} အတွက် ${stock} ခုသာ ကျန်ရှိပါတော့သည်`;
+      setSaleError(msg);
+      toast.warning(msg);
       return;
     }
 
@@ -384,7 +386,9 @@ export function DataEntryContent({ role = "staff", onNavigate }: DataEntryProps)
       for (const si of saleItems) {
         const liveStock = await db.getItemStock(si.itemId);
         if (liveStock < si.quantity) {
-          setSaleError(`လက်ကျန် မလောက်ပါ။ ${si.name} အတွက် လက်ရှိလက်ကျန် ${liveStock} ခုသာ ရှိပါသည်။`);
+          const msg = `ရောင်းချရန် ပစ္စည်း လက်ကျန်မလုံလောက်ပါ။ ${si.name} အတွက် ${liveStock} ခုသာ ကျန်ရှိပါတော့သည်`;
+          setSaleError(msg);
+          toast.warning(msg);
           const newStock = await db.getStockWithToday();
           setStockData(newStock);
           setSaleSubmitting(false);

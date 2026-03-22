@@ -75,8 +75,8 @@ export function ProductionLogContent({ onNavigate }: { onNavigate?: (tab: string
   const [searchTerm, setSearchTerm] = useState("");
 
   // Filter state
-  const defaults = getDefaultDates("7 Days");
-  const [selectedRange, setSelectedRange] = useState("7 Days");
+  const defaults = getDefaultDates("All");
+  const [selectedRange, setSelectedRange] = useState("All");
   const [dateFrom, setDateFrom] = useState(defaults.from);
   const [dateTo, setDateTo] = useState(defaults.to);
 
@@ -166,8 +166,8 @@ export function ProductionLogContent({ onNavigate }: { onNavigate?: (tab: string
 
   const handleReset = () => {
     setSearchTerm("");
-    setSelectedRange("7 Days");
-    const d = getDefaultDates("7 Days");
+    setSelectedRange("All");
+    const d = getDefaultDates("All");
     setDateFrom(d.from);
     setDateTo(d.to);
   };
