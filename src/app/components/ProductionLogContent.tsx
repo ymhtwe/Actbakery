@@ -416,7 +416,7 @@ export function ProductionLogContent({ onNavigate }: { onNavigate?: (tab: string
       </div>
 
       {/* ── Filters ── */}
-      <div className="bg-white rounded-[12px] border border-[#E5E7EB] shadow-[0_1px_3px_rgba(0,0,0,0.04)] p-3 sm:p-4">
+      <div className="bg-white rounded-[12px] border border-[#E5E7EB] shadow-[0_1px_3px_rgba(0,0,0,0.04)] p-3 sm:p-4 mt-4">
         <div className={`flex ${isMobile ? "flex-col" : "flex-row flex-wrap items-end"} gap-3`}>
           <div className="flex flex-col gap-1.5">
             <label className="text-[#6B7280]" style={{ fontSize: "0.75rem" }}>ရက်အပိုင်းအခြား</label>
@@ -459,7 +459,7 @@ export function ProductionLogContent({ onNavigate }: { onNavigate?: (tab: string
         </div>
 
         {/* Quick range chips */}
-        <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap mt-3 pt-3 border-t border-[#F3F4F6]">
           <span className="text-[#9CA3AF] mr-1" style={{ fontSize: "0.75rem" }}>အမြန်ရွေးရန်:</span>
           {QUICK_RANGES.map((r) => (
             <button
