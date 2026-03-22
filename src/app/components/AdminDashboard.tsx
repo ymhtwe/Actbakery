@@ -47,7 +47,7 @@ import { CustomerManagement } from "./CustomerManagement";
 
 // ── Sidebar items ──
 const sidebarItems = [
-  { icon: LayoutDashboard, label: "ယနေ့အခြေအနေ", id: "dashboard" },
+  { icon: LayoutDashboard, label: "လက်ကျန် အခြေအနေ", id: "dashboard" },
   { icon: ScanBarcode, label: "မှတ်တမ်းသွင်းရန်", id: "data_entry" },
   { icon: Cake, label: "ကုန်ထုတ်လုပ်မှုမှတ်တမ်း", id: "production_log" },
   { icon: ShoppingBag, label: "အရောင်းမှတ်တမ်း", id: "sales" },
@@ -554,8 +554,8 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
                 {/* Today Snapshot */}
                 <div>
                   <div className="mb-5">
-                    <h3 className="text-[#1F2937]">ယနေ့ အခြေအနေ</h3>
-                    <p className="text-[#9CA3AF] mt-0.5" style={{ fontSize: "0.85rem" }}>ယနေ့ ထုတ်လုပ်မှုနှင့် လက်ကျန်ပမာဏ အခြေအနေ</p>
+                    <h3 className="text-[#1F2937]">လက်ကျန် အခြေအနေ</h3>
+                    <p className="text-[#9CA3AF] mt-0.5" style={{ fontSize: "0.85rem" }}>ယနေ့ ထုတ်လုပ်မှုနှင့် လက်ကျန် အခြေအနေ</p>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
                     {products.map((product) => {
