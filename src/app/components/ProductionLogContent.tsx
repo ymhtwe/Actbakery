@@ -25,6 +25,39 @@ interface ProdRow {
   created_at: string;
 }
 
+const QUICK_RANGES = [
+  { value: "Today", label: "\u101a\u1014\u1031\u1037" },
+  { value: "7 Days", label: "\u1047 \u101b\u1000\u103a" },
+  { value: "14 Days", label: "\u1041\u1044 \u101b\u1000\u103a" },
+  { value: "30 Days", label: "\u1043\u1040 \u101b\u1000\u103a" },
+  { value: "All", label: "\u1021\u102c\u1038\u101c\u102f\u1036\u1038" },
+];
+
+function getDefaultDates(range: string) {
+  const to = new Date();
+  const from = new Date();
+  switch (range) {
+    case "Today":
+      break;
+    case "7 Days":
+      from.setDate(to.getDate() - 6);
+      break;
+    case "14 Days":
+      from.setDate(to.getDate() - 13);
+      break;
+    case "30 Days":
+      from.setDate(to.getDate() - 29);
+      break;
+    case "All":
+      from.setFullYear(2020);
+      break;
+    default:
+      from.setDate(to.getDate() - 29);
+  }
+  const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return { from: fmt(from), to: fmt(to) };
+}
+
 function formatDate(iso: string) {
   if (!iso) return "\u2014";
   const d = new Date(iso);
@@ -42,15 +75,10 @@ export function ProductionLogContent({ onNavigate }: { onNavigate?: (tab: string
   const [searchTerm, setSearchTerm] = useState("");
 
   // Filter state
-  const [dateFrom, setDateFrom] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 29);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  });
-  const [dateTo, setDateTo] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-  });
+  const defaults = getDefaultDates("7 Days");
+  const [selectedRange, setSelectedRange] = useState("7 Days");
+  const [dateFrom, setDateFrom] = useState(defaults.from);
+  const [dateTo, setDateTo] = useState(defaults.to);
 
   // Items list for edit dropdown
   const [allItems, setAllItems] = useState<{ id: string; name: string }[]>([]);
@@ -129,13 +157,19 @@ export function ProductionLogContent({ onNavigate }: { onNavigate?: (tab: string
     loadData();
   }, [loadData]);
 
+  const handleRangeChange = (r: string) => {
+    setSelectedRange(r);
+    const d = getDefaultDates(r);
+    setDateFrom(d.from);
+    setDateTo(d.to);
+  };
+
   const handleReset = () => {
     setSearchTerm("");
-    const d = new Date();
-    d.setDate(d.getDate() - 29);
-    const fmt = (dt: Date) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
-    setDateFrom(fmt(d));
-    setDateTo(fmt(new Date()));
+    setSelectedRange("7 Days");
+    const d = getDefaultDates("7 Days");
+    setDateFrom(d.from);
+    setDateTo(d.to);
   };
 
   // Filtered logs
@@ -389,12 +423,12 @@ export function ProductionLogContent({ onNavigate }: { onNavigate?: (tab: string
             <div className={`flex items-center gap-2 ${isMobile ? "flex-col" : ""}`}>
               <div className="relative w-full sm:w-auto">
                 <Calendar className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#9CA3AF] pointer-events-none" />
-                <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="w-full pl-9 pr-3 py-2 rounded-[10px] border border-[#E5E7EB] bg-white text-[#1F2937] focus:outline-none focus:ring-2 focus:ring-[#D6B25E]/30 focus:border-[#D6B25E] transition-all" style={{ fontSize: "0.85rem" }} />
+                <input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setSelectedRange(""); }} className="w-full pl-9 pr-3 py-2 rounded-[10px] border border-[#E5E7EB] bg-white text-[#1F2937] focus:outline-none focus:ring-2 focus:ring-[#D6B25E]/30 focus:border-[#D6B25E] transition-all" style={{ fontSize: "0.85rem" }} />
               </div>
               {!isMobile && <span className="text-[#9CA3AF]" style={{ fontSize: "0.8rem" }}>မှ</span>}
               <div className="relative w-full sm:w-auto">
                 <Calendar className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#9CA3AF] pointer-events-none" />
-                <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-full pl-9 pr-3 py-2 rounded-[10px] border border-[#E5E7EB] bg-white text-[#1F2937] focus:outline-none focus:ring-2 focus:ring-[#D6B25E]/30 focus:border-[#D6B25E] transition-all" style={{ fontSize: "0.85rem" }} />
+                <input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setSelectedRange(""); }} className="w-full pl-9 pr-3 py-2 rounded-[10px] border border-[#E5E7EB] bg-white text-[#1F2937] focus:outline-none focus:ring-2 focus:ring-[#D6B25E]/30 focus:border-[#D6B25E] transition-all" style={{ fontSize: "0.85rem" }} />
               </div>
             </div>
           </div>
@@ -422,6 +456,25 @@ export function ProductionLogContent({ onNavigate }: { onNavigate?: (tab: string
               ပြန်လည်သတ်မှတ်ရန်
             </button>
           </div>
+        </div>
+
+        {/* Quick range chips */}
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+          <span className="text-[#9CA3AF] mr-1" style={{ fontSize: "0.75rem" }}>အမြန်ရွေးရန်:</span>
+          {QUICK_RANGES.map((r) => (
+            <button
+              key={r.value}
+              onClick={() => handleRangeChange(r.value)}
+              className={`px-3.5 rounded-full border transition-all cursor-pointer ${
+                selectedRange === r.value
+                  ? "bg-[#FAF6EC] text-[#B8943C] border-[#D6B25E]/40"
+                  : "bg-white text-[#6B7280] border-[#E5E7EB] hover:bg-[#FAF6EC] hover:text-[#1F2937]"
+              }`}
+              style={{ fontSize: "0.8rem", height: "32px" }}
+            >
+              {r.label}
+            </button>
+          ))}
         </div>
       </div>
 
