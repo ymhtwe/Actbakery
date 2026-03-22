@@ -370,7 +370,7 @@ export function ProductionLogContent({ onNavigate }: { onNavigate?: (tab: string
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* ── Summary ── */}
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
         <button
