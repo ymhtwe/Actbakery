@@ -189,7 +189,6 @@ export async function getProductionLogs() {
     throw new Error(`Failed to load production logs: ${error.message}`);
 
   const rows = data || [];
-  const tsCol = rows.length > 0 ? findTimestampCol(rows[0] as any) : null;
 
   return rows
     .map((row: any) => ({
@@ -197,8 +196,8 @@ export async function getProductionLogs() {
       item_id: row.item_id,
       item_name: row.items?.name || "Unknown",
       quantity: row.qty,
-      production_date: getDateFromRow(row, tsCol),
-      created_at: tsCol ? row[tsCol] : row.id,
+      production_date: getDateFromRow(row, "produced_at"),
+      created_at: row.produced_at || row.created_at || row.id,
     }))
     .sort((a: any, b: any) =>
       (b.created_at || "").localeCompare(a.created_at || ""),
@@ -209,11 +208,12 @@ export async function createProductionLogs(
   entries: { item_id: string; quantity: number }[],
   produced_at?: string,
 ) {
-  const rows = entries.map((e) => {
-    const row: Record<string, unknown> = { item_id: e.item_id, qty: e.quantity };
-    if (produced_at) row.produced_at = produced_at + "T00:00:00+06:30";
-    return row;
-  });
+  const dateStr = produced_at || localDateStr();
+  const rows = entries.map((e) => ({
+    item_id: e.item_id,
+    qty: e.quantity,
+    produced_at: dateStr + "T00:00:00+06:30",
+  }));
   const { error } = await supabase.from("production_logs").insert(rows);
   if (error)
     throw new Error(`Failed to create production logs: ${error.message}`);
@@ -264,7 +264,6 @@ export async function getSalesLogs() {
   if (error) throw new Error(`Failed to load sales logs: ${error.message}`);
 
   const rows = data || [];
-  const tsCol = rows.length > 0 ? findTimestampCol(rows[0] as any) : null;
 
   return rows
     .map((row: any) => ({
@@ -275,8 +274,8 @@ export async function getSalesLogs() {
       customer_id: row.customer_id,
       customer_name: row.customers?.name || "Walk-in",
       note: row.note || "",
-      sold_at: row.sold_at || (tsCol ? row[tsCol] : ""),
-      created_at: tsCol ? row[tsCol] : row.sold_at || row.id,
+      sold_at: row.sold_at || row.created_at || "",
+      created_at: row.sold_at || row.created_at || row.id,
     }))
     .sort((a: any, b: any) =>
       (b.created_at || "").localeCompare(a.created_at || ""),
@@ -425,11 +424,6 @@ export async function getDailyProduction(days = 30) {
   if (prodErr)
     throw new Error(`Failed to load production logs: ${prodErr.message}`);
 
-  const tsCol =
-    (prodLogs || []).length > 0
-      ? findTimestampCol((prodLogs as any[])[0])
-      : null;
-
   const today = new Date();
   const itemMap = new Map<string, string>();
   const itemNames: string[] = [];
@@ -451,7 +445,7 @@ export async function getDailyProduction(days = 30) {
     for (const name of itemNames) entry[name] = 0;
 
     for (const log of prodLogs || []) {
-      const logDate = getDateFromRow(log as any, tsCol);
+      const logDate = getDateFromRow(log as any, "produced_at");
       if (logDate === dateStr) {
         const name = itemMap.get((log as any).item_id);
         if (name) {
@@ -478,12 +472,10 @@ export async function getStockWithToday() {
 
   const prodRows = allProd.data || [];
   const today = localDateStr();
-  const tsCol =
-    prodRows.length > 0 ? findTimestampCol(prodRows[0] as any) : null;
 
   const todayMap = new Map<string, number>();
   for (const row of prodRows) {
-    const rowDate = getDateFromRow(row as any, tsCol);
+    const rowDate = getDateFromRow(row as any, "produced_at");
     if (rowDate === today) {
       todayMap.set(
         (row as any).item_id,
