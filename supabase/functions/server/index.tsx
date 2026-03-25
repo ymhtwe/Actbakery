@@ -106,10 +106,14 @@ app.get(`${P}/api/users`, async (c) => {
       return c.json({ error: `Failed to list profiles: ${profileError.message}` }, 500);
     }
 
-    // Build a lookup map from auth users by id
+    // Build lookup maps
     const authMap = new Map<string, any>();
     for (const u of (authData?.users || [])) {
       authMap.set(u.id, u);
+    }
+    const profileMap = new Map<string, any>();
+    for (const p of (profiles || [])) {
+      profileMap.set(p.id, p);
     }
 
     // Merge: profiles as base, enrich with email from auth
@@ -124,6 +128,20 @@ app.get(`${P}/api/users`, async (c) => {
         created_at: p.created_at || authUser?.created_at || "",
       };
     });
+
+    // Also include auth users that have no matching profile row
+    for (const u of (authData?.users || [])) {
+      if (!profileMap.has(u.id)) {
+        users.push({
+          id: u.id,
+          display_name: u.user_metadata?.display_name || u.email || "—",
+          email: u.email || "—",
+          role: u.user_metadata?.role || "staff",
+          status: "Active",
+          created_at: u.created_at || "",
+        });
+      }
+    }
 
     return c.json(users);
   } catch (e: any) {

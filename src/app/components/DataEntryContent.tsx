@@ -16,9 +16,13 @@ import {
   Loader2,
   Info,
   ShieldAlert,
+  Printer,
+  Receipt,
 } from "lucide-react";
 import { toast } from "sonner";
 import * as db from "./db";
+import { ReceiptPrint } from "./ReceiptPrint";
+import type { ReceiptLineItem } from "./ReceiptPrint";
 
 // ── Types ──
 interface CatalogItem {
@@ -26,6 +30,7 @@ interface CatalogItem {
   name: string;
   low_stock_threshold: number;
   is_active?: boolean;
+  default_price?: number;
 }
 
 interface StockItem {
@@ -34,13 +39,14 @@ interface StockItem {
   currentStock: number;
   todayProduced: number;
   lowStockThreshold: number;
+  defaultPrice: number;
 }
 
 interface Customer {
   id: string;
   name: string;
-  phone?: string;
-  address?: string;
+  phone?: string | null;
+  address?: string | null;
 }
 
 interface EntryItem {
@@ -55,11 +61,18 @@ interface SaleEntryItem {
   itemId: string;
   name: string;
   quantity: number;
+  price: number;
+  total: number;
 }
 
 interface DataEntryProps {
   role?: "admin" | "staff";
   onNavigate?: (tab: string, subTab?: string) => void;
+}
+
+function makeTempReceiptNo(dateStr: string) {
+  const dateCode = dateStr.replace(/-/g, "");
+  return `BCH-${dateCode}-00000`;
 }
 
 export function DataEntryContent({ role = "staff", onNavigate }: DataEntryProps) {
@@ -106,6 +119,10 @@ export function DataEntryContent({ role = "staff", onNavigate }: DataEntryProps)
   const saleItemDropRef = useRef<HTMLDivElement>(null);
 
   const [saleQtyStr, setSaleQtyStr] = useState("1");
+  const [salePriceStr, setSalePriceStr] = useState("");
+  const [receiptNo, setReceiptNo] = useState("");
+  const [receiptNoManual, setReceiptNoManual] = useState(false);
+  const receiptRef = useRef<HTMLDivElement>(null);
 
   const [saleCustomer, setSaleCustomer] = useState<Customer | null>(null);
   const [customerSearch, setCustomerSearch] = useState("");
@@ -121,7 +138,26 @@ export function DataEntryContent({ role = "staff", onNavigate }: DataEntryProps)
   });
   const [saleDateModified, setSaleDateModified] = useState(false);
   const [showSaleDateConfirm, setShowSaleDateConfirm] = useState(false);
+  const [pendingSaleAction, setPendingSaleAction] = useState<"save" | "saveAndPrint" | null>(null);
   const saleDateInputRef = useRef<HTMLInputElement>(null);
+
+  // Auto-generate receipt number for a given date
+  const refreshReceiptNo = useCallback(async (dateStr: string) => {
+    try {
+      const next = await db.getNextReceiptNumber(dateStr);
+      setReceiptNo(next);
+    } catch (e) {
+      console.error("Failed to generate receipt no:", e);
+      setReceiptNo(makeTempReceiptNo(dateStr));
+    }
+    setReceiptNoManual(false);
+  }, []);
+
+  // Generate receipt number on mount
+  useEffect(() => {
+    refreshReceiptNo(saleDate);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── New Customer Modal ──
   const [showNewCustomer, setShowNewCustomer] = useState(false);
@@ -333,6 +369,11 @@ export function DataEntryContent({ role = "staff", onNavigate }: DataEntryProps)
       setSaleError("အရေအတွက် မှန်ကန်စွာ ထည့်ပါ။");
       return;
     }
+    const price = parseInt(salePriceStr, 10);
+    if (isNaN(price) || price < 0) {
+      setSaleError("ဈေးနှုန်း မှန်ကန်စွာ ထည့်ပါ။");
+      return;
+    }
 
     // Check stock
     const stock = getStockForItem(saleItemPick);
@@ -349,13 +390,15 @@ export function DataEntryContent({ role = "staff", onNavigate }: DataEntryProps)
     setSaleItems((prev) => {
       const existing = prev.find((i) => i.itemId === saleItemPickId);
       if (existing) {
-        return prev.map((i) => i.itemId === saleItemPickId ? { ...i, quantity: i.quantity + qty } : i);
+        const newQty = existing.quantity + qty;
+        return prev.map((i) => i.itemId === saleItemPickId ? { ...i, quantity: newQty, price, total: newQty * price } : i);
       }
-      return [...prev, { id: Date.now().toString(), itemId: saleItemPickId, name: saleItemPick, quantity: qty }];
+      return [...prev, { id: Date.now().toString(), itemId: saleItemPickId, name: saleItemPick, quantity: qty, price, total: qty * price }];
     });
     setSaleItemPick("");
     setSaleItemPickId("");
     setSaleQtyStr("1");
+    setSalePriceStr("");
   };
 
   const removeSaleItem = (id: string) => {
@@ -364,13 +407,43 @@ export function DataEntryContent({ role = "staff", onNavigate }: DataEntryProps)
 
   const updateSaleItemQty = (id: string, delta: number) => {
     setSaleItems((prev) =>
-      prev.map((item) => item.id === id ? { ...item, quantity: Math.max(1, item.quantity + delta) } : item)
+      prev.map((item) => {
+        if (item.id !== id) return item;
+        const newQty = Math.max(1, item.quantity + delta);
+        return { ...item, quantity: newQty, total: newQty * item.price };
+      })
     );
+  };
+
+  const saleGrandTotal = saleItems.reduce((sum, i) => sum + i.total, 0);
+  const saleTotalQty = saleItems.reduce((sum, i) => sum + i.quantity, 0);
+
+  const handlePrintReceipt = () => {
+    window.print();
+  };
+
+  const handleSaveAndPrint = () => {
+    if (saleItems.length === 0 || !saleCustomer || saleSubmitting) return;
+    if (!saleDateModified) {
+      setPendingSaleAction("saveAndPrint");
+      setShowSaleDateConfirm(true);
+      return;
+    }
+    doSaleSubmitAndPrint();
+  };
+
+  const doSaleSubmitAndPrint = async () => {
+    await doSaleSubmit();
+    // Small delay to let state update, then print
+    setTimeout(() => {
+      window.print();
+    }, 300);
   };
 
   const trySaleSubmit = () => {
     if (saleItems.length === 0 || !saleCustomer || saleSubmitting) return;
     if (!saleDateModified) {
+      setPendingSaleAction("save");
       setShowSaleDateConfirm(true);
       return;
     }
@@ -396,10 +469,33 @@ export function DataEntryContent({ role = "staff", onNavigate }: DataEntryProps)
         }
       }
 
-      // Create a sale log for each item
-      for (const si of saleItems) {
-        await db.createSalesLog(si.itemId, si.quantity, saleCustomer.id, undefined, saleDate);
-      }
+      // Build receipt header
+      const subtotal = saleItems.reduce((sum, si) => sum + si.total, 0);
+      const discountAmount = 0;
+      const grandTotal = subtotal - discountAmount;
+
+      const header: db.ReceiptHeaderInsert = {
+        receipt_no: receiptNo,
+        customer_id: saleCustomer?.id ?? null,
+        receipt_date: saleDate,
+        subtotal,
+        discount_amount: discountAmount,
+        grand_total: grandTotal,
+        note: null,
+        created_by: null,
+        status: 'posted',
+      };
+
+      // Build receipt lines
+      const lines = saleItems.map((si) => ({
+        item_id: si.itemId,
+        item_name_snapshot: si.name,
+        qty: si.quantity,
+        unit_price: si.price,
+        line_total: si.total,
+      }));
+
+      await db.createSalesReceipt(header, lines);
 
       setSaleSubmitted(true);
       const newStock = await db.getStockWithToday();
@@ -411,7 +507,11 @@ export function DataEntryContent({ role = "staff", onNavigate }: DataEntryProps)
         setSaleCustomer(null);
         setCustomerSearch("");
         setSaleQtyStr("1");
-        { const now = new Date(); setSaleDate(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`); }
+        setSalePriceStr("");
+        const now = new Date();
+        const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+        setSaleDate(todayStr);
+        refreshReceiptNo(todayStr);
         setSaleDateModified(false);
         setSaleSubmitted(false);
       }, 1800);
@@ -426,11 +526,17 @@ export function DataEntryContent({ role = "staff", onNavigate }: DataEntryProps)
   const handleSaleDateConfirm = () => {
     setShowSaleDateConfirm(false);
     setSaleDateModified(true);
-    doSaleSubmit();
+    if (pendingSaleAction === "saveAndPrint") {
+      doSaleSubmitAndPrint();
+    } else {
+      doSaleSubmit();
+    }
+    setPendingSaleAction(null);
   };
 
   const handleSaleDateChange = () => {
     setShowSaleDateConfirm(false);
+    setPendingSaleAction(null);
     saleDateInputRef.current?.click();
     saleDateInputRef.current?.focus();
   };
@@ -442,6 +548,8 @@ export function DataEntryContent({ role = "staff", onNavigate }: DataEntryProps)
     setSaleCustomer(null);
     setCustomerSearch("");
     setSaleQtyStr("1");
+    setSalePriceStr("");
+    refreshReceiptNo(saleDate);
     setSaleError("");
   };
 
@@ -738,95 +846,173 @@ export function DataEntryContent({ role = "staff", onNavigate }: DataEntryProps)
         )}
 
         {/* ═══════════════════════════════════════════════ */}
-        {/*  SALE TAB                                      */}
+        {/*  SALE TAB — RECEIPT / VOUCHER BUILDER          */}
         {/* ═══════════════════════════════════════════════ */}
         {activeMode === "sale" && (
-          <div className="bg-white rounded-[12px] border border-[#E5E7EB] shadow-[0_1px_3px_rgba(0,0,0,0.04)] p-5 sm:p-7">
-            <div className="flex items-center gap-2 mb-6">
-              <ShoppingCart className="w-5 h-5 text-[#D6B25E]" />
-              <h3 className="text-[#1F2937]">ရောင်းချမှု မှတ်တမ်း</h3>
-            </div>
+          <div className="space-y-5 print:hidden">
 
-            <div className="space-y-5">
-              {/* ── 1. Select Customer FIRST ── */}
-              <div className="relative" ref={customerDropRef}>
-                <label className="block text-[#6B7280] mb-1.5" style={{ fontSize: "0.75rem" }}>
-                  ဖောက်သည် ရွေးချယ်ရန်
-                </label>
-                <div className="relative">
-                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#9CA3AF] pointer-events-none" />
-                  <input
-                    type="text"
-                    placeholder="ဖောက်သည် ရှာရန်..."
-                    value={customerSearch}
-                    onChange={(e) => {
-                      setCustomerSearch(e.target.value);
-                      setCustomerDropOpen(true);
-                      if (!e.target.value) setSaleCustomer(null);
-                    }}
-                    onFocus={() => setCustomerDropOpen(true)}
-                    className="w-full pl-9 pr-4 py-3 rounded-[12px] border border-[#E5E7EB] bg-white text-[#1F2937] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#D6B25E]/30 focus:border-[#D6B25E] transition-all"
-                    style={{ fontSize: "0.9rem" }}
-                  />
-                  {saleCustomer && (
-                    <button
-                      onClick={() => { setSaleCustomer(null); setCustomerSearch(""); }}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9CA3AF] hover:text-[#DC2626] cursor-pointer transition-colors"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-                {customerDropOpen && (
-                  <div className="absolute top-full left-0 mt-1 w-full bg-white border border-[#E5E7EB] rounded-[12px] shadow-lg z-30 py-1 max-h-56 overflow-auto">
-                    {filteredCustomers.map((c) => (
-                      <button
-                        key={c.id}
-                        onClick={() => {
-                          setSaleCustomer(c);
-                          setCustomerSearch(c.name);
-                          setCustomerDropOpen(false);
-                        }}
-                        className={`w-full text-left px-4 py-2.5 hover:bg-[#FAF6EC] transition-colors cursor-pointer ${
-                          saleCustomer?.id === c.id ? "text-[#B8943C] bg-[#FAF6EC]" : "text-[#1F2937]"
-                        }`}
-                        style={{ fontSize: "0.85rem" }}
-                      >
-                        <span>{c.name}</span>
-                        {c.phone && (
-                          <span className="text-[#9CA3AF] ml-2" style={{ fontSize: "0.75rem" }}>
-                            {c.phone}
-                          </span>
-                        )}
-                      </button>
-                    ))}
-                    {filteredCustomers.length === 0 && (
-                      <p className="px-4 py-2.5 text-[#9CA3AF]" style={{ fontSize: "0.85rem" }}>
-                        ဖောက်သည် မတွေ့ပါ
-                      </p>
-                    )}
-                    <button
-                      onClick={() => {
-                        setCustomerDropOpen(false);
-                        setShowNewCustomer(true);
-                        setNewCustError("");
-                        setNewCustSuccess(false);
-                      }}
-                      className="w-full text-left px-4 py-2.5 hover:bg-[#FAF6EC] transition-colors cursor-pointer text-[#D6B25E] flex items-center gap-2 border-t border-[#E5E7EB]"
-                      style={{ fontSize: "0.85rem" }}
-                    >
-                      <UserPlus className="w-4 h-4" />
-                      + ဖောက်သည်အသစ် ထည့်ရန်
-                    </button>
-                  </div>
-                )}
+            {/* ─── 1) RECEIPT HEADER ─── */}
+            <div className="bg-white rounded-[12px] border border-[#E5E7EB] shadow-[0_1px_3px_rgba(0,0,0,0.04)] p-5 sm:p-7">
+              <div className="flex items-center gap-2 mb-5">
+                <Receipt className="w-5 h-5 text-[#D6B25E]" />
+                <h3 className="text-[#1F2937]">ဘောင်ချာ တည်ဆောက်ရန်</h3>
               </div>
 
-              {/* ── 2. Select Item + Qty ── */}
-              <div className="flex flex-col sm:flex-row gap-3">
-                <div className="flex-1 relative" ref={saleItemDropRef}>
+              <div className="space-y-4">
+                {/* Customer selector */}
+                <div className="relative" ref={customerDropRef}>
                   <label className="block text-[#6B7280] mb-1.5" style={{ fontSize: "0.75rem" }}>
-                    ပစ္စည်း ရွေးချယ်ရန်
+                    ၀ယ်သူအမည် <span className="text-red-400">*</span>
+                  </label>
+                  <div className="relative">
+                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#9CA3AF] pointer-events-none" />
+                    <input
+                      type="text"
+                      placeholder="၀ယ်သူအမည် ရှာရန်..."
+                      value={customerSearch}
+                      onChange={(e) => {
+                        setCustomerSearch(e.target.value);
+                        setCustomerDropOpen(true);
+                        if (!e.target.value) setSaleCustomer(null);
+                      }}
+                      onFocus={() => setCustomerDropOpen(true)}
+                      className="w-full pl-9 pr-4 py-3 rounded-[12px] border border-[#E5E7EB] bg-white text-[#1F2937] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#D6B25E]/30 focus:border-[#D6B25E] transition-all"
+                      style={{ fontSize: "0.9rem" }}
+                    />
+                    {saleCustomer && (
+                      <button
+                        onClick={() => { setSaleCustomer(null); setCustomerSearch(""); }}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9CA3AF] hover:text-[#DC2626] cursor-pointer transition-colors"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                  {customerDropOpen && (
+                    <div className="absolute top-full left-0 mt-1 w-full bg-white border border-[#E5E7EB] rounded-[12px] shadow-lg z-30 py-1 max-h-56 overflow-auto">
+                      {filteredCustomers.map((c) => (
+                        <button
+                          key={c.id}
+                          onClick={() => {
+                            setSaleCustomer(c);
+                            setCustomerSearch(c.name);
+                            setCustomerDropOpen(false);
+                          }}
+                          className={`w-full text-left px-4 py-2.5 hover:bg-[#FAF6EC] transition-colors cursor-pointer ${
+                            saleCustomer?.id === c.id ? "text-[#B8943C] bg-[#FAF6EC]" : "text-[#1F2937]"
+                          }`}
+                          style={{ fontSize: "0.85rem" }}
+                        >
+                          <span>{c.name}</span>
+                          {c.phone && (
+                            <span className="text-[#9CA3AF] ml-2" style={{ fontSize: "0.75rem" }}>
+                              {c.phone}
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                      {filteredCustomers.length === 0 && (
+                        <p className="px-4 py-2.5 text-[#9CA3AF]" style={{ fontSize: "0.85rem" }}>
+                          ၀ယ်သူအမည် မတွေ့ပါ
+                        </p>
+                      )}
+                      <button
+                        onClick={() => {
+                          setCustomerDropOpen(false);
+                          setShowNewCustomer(true);
+                          setNewCustError("");
+                          setNewCustSuccess(false);
+                        }}
+                        className="w-full text-left px-4 py-2.5 hover:bg-[#FAF6EC] transition-colors cursor-pointer text-[#D6B25E] flex items-center gap-2 border-t border-[#E5E7EB]"
+                        style={{ fontSize: "0.85rem" }}
+                      >
+                        <UserPlus className="w-4 h-4" />
+                        + ၀ယ်သူအမည်အသစ် ထည့်ရန်
+                      </button>
+                    </div>
+                  )}
+                </div>
+                {!saleCustomer && !customerDropOpen && customerSearch === "" && (
+                  <p className="text-amber-600 mt-1.5 flex items-center gap-1.5" style={{ fontSize: "0.7rem" }}>
+                    <AlertTriangle className="w-3 h-3 shrink-0" />
+                    ကျေးဇူးပြု၍ ဝယ်သူကို ရွေးချယ်ပါ
+                  </p>
+                )}
+
+                {/* Date & Receipt No */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[#6B7280] mb-1.5" style={{ fontSize: "0.75rem" }}>
+                      နေ့စွဲ
+                    </label>
+                    <div className="relative">
+                      <input
+                        ref={saleDateInputRef}
+                        type="date"
+                        value={saleDate}
+                        max={(() => { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`; })()}
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            setSaleDate(e.target.value);
+                            setSaleDateModified(true);
+                            if (!receiptNoManual) {
+                              refreshReceiptNo(e.target.value);
+                            }
+                          }
+                        }}
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                        style={{ zIndex: 1 }}
+                      />
+                      <div
+                        className="w-full flex items-center justify-between px-4 py-3 rounded-[12px] border border-[#E5E7EB] bg-white text-[#1F2937] pointer-events-none"
+                        style={{ fontSize: "0.9rem", minHeight: "48px" }}
+                      >
+                        <span>{formatDisplayDate(saleDate)}</span>
+                        <CalendarDays className="w-4 h-4 text-[#9CA3AF] shrink-0" />
+                      </div>
+                    </div>
+                    {saleDate !== (() => { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`; })() && (
+                      <p className="text-amber-600 mt-1.5 flex items-center gap-1.5" style={{ fontSize: "0.7rem" }}>
+                        <CalendarDays className="w-3 h-3 shrink-0" />
+                        ယနေ့ မဟုတ်သော ရက်စွဲ
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-[#6B7280] mb-1.5" style={{ fontSize: "0.75rem" }}>
+                      ဘောင်ချာအမှတ်
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="BCH-20250101-00001"
+                      value={receiptNo}
+                      onChange={(e) => { setReceiptNo(e.target.value); setReceiptNoManual(true); }}
+                      className="w-full px-4 py-3 rounded-[12px] border border-[#E5E7EB] bg-white text-[#1F2937] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#D6B25E]/30 focus:border-[#D6B25E] transition-all"
+                      style={{ fontSize: "0.9rem" }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Summary badge */}
+              {saleItems.length > 0 && (
+                <div className="mt-4 px-3.5 py-2.5 rounded-[10px] bg-[#FAF6EC] border border-[#D6B25E]/20">
+                  <p className="text-[#B8943C]" style={{ fontSize: "0.8rem" }}>
+                    ဒီဘောင်ချာတွင် ပစ္စည်း ({saleItems.length}) မျိုး
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* ─── 2) ADD LINE ITEM FORM ─── */}
+            <div className="bg-white rounded-[12px] border border-[#E5E7EB] shadow-[0_1px_3px_rgba(0,0,0,0.04)] p-5 sm:p-7">
+              <h4 className="text-[#1F2937] mb-4" style={{ fontSize: "0.95rem" }}>ပစ္စည်းထည့်ရန်</h4>
+
+              <div className="space-y-3">
+                {/* Item selector */}
+                <div className="relative" ref={saleItemDropRef}>
+                  <label className="block text-[#6B7280] mb-1.5" style={{ fontSize: "0.75rem" }}>
+                    ပစ္စည်းရွေးရန်
                   </label>
                   <button
                     onClick={() => setSaleItemDropOpen(!saleItemDropOpen)}
@@ -871,6 +1057,8 @@ export function DataEntryContent({ role = "staff", onNavigate }: DataEntryProps)
                               setSaleItemPickId(p.id);
                               setSaleItemDropOpen(false);
                               setSaleError("");
+                              const stockPrice = stockData.find((s) => s.id === p.id)?.defaultPrice ?? p.default_price ?? 0;
+                              setSalePriceStr(stockPrice ? String(stockPrice) : "");
                             }}
                             className={`w-full text-left px-4 py-2.5 hover:bg-[#FAF6EC] transition-colors cursor-pointer flex items-center justify-between ${
                               saleItemPick === p.name ? "text-[#B8943C] bg-[#FAF6EC]" : "text-[#1F2937]"
@@ -887,7 +1075,7 @@ export function DataEntryContent({ role = "staff", onNavigate }: DataEntryProps)
                     </div>
                   )}
                   {saleItemPick && (
-                    <div className="mt-2 px-3.5 py-2.5 rounded-[10px] bg-[#FAFAF8] border border-[#E5E7EB]">
+                    <div className="mt-2 px-3.5 py-2 rounded-[10px] bg-[#FAFAF8] border border-[#E5E7EB]">
                       <div className="flex items-center justify-between" style={{ fontSize: "0.75rem" }}>
                         <span className="text-[#6B7280]">လက်ရှိ လက်ကျန်:</span>
                         <span className={getStockForItem(saleItemPick) <= 5 ? "text-amber-600" : "text-[#1F2937]"}>
@@ -898,183 +1086,320 @@ export function DataEntryContent({ role = "staff", onNavigate }: DataEntryProps)
                   )}
                 </div>
 
-                <div className="w-full sm:w-28">
-                  <label className="block text-[#6B7280] mb-1.5" style={{ fontSize: "0.75rem" }}>
-                    အရေအတွက်
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={saleQtyStr}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      if (v === "" || /^\d+$/.test(v)) {
-                        setSaleQtyStr(v);
-                        setSaleError("");
-                      }
-                    }}
-                    className="w-full px-4 py-3 rounded-[12px] border border-[#E5E7EB] bg-white text-[#1F2937] focus:outline-none focus:ring-2 focus:ring-[#D6B25E]/30 focus:border-[#D6B25E] transition-all text-center"
-                    style={{ fontSize: "0.9rem" }}
-                  />
+                {/* Price + Qty row */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[#6B7280] mb-1.5" style={{ fontSize: "0.75rem" }}>
+                      ဈေးနှုန်း (ကျပ်)
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="0"
+                      value={salePriceStr}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v === "" || /^\d+$/.test(v)) setSalePriceStr(v);
+                      }}
+                      className="w-full px-4 py-3 rounded-[12px] border border-[#E5E7EB] bg-white text-[#1F2937] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#D6B25E]/30 focus:border-[#D6B25E] transition-all text-center"
+                      style={{ fontSize: "0.9rem" }}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[#6B7280] mb-1.5" style={{ fontSize: "0.75rem" }}>
+                      အရေအတွက်
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={saleQtyStr}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v === "" || /^\d+$/.test(v)) {
+                          setSaleQtyStr(v);
+                          setSaleError("");
+                        }
+                      }}
+                      className="w-full px-4 py-3 rounded-[12px] border border-[#E5E7EB] bg-white text-[#1F2937] focus:outline-none focus:ring-2 focus:ring-[#D6B25E]/30 focus:border-[#D6B25E] transition-all text-center"
+                      style={{ fontSize: "0.9rem" }}
+                    />
+                  </div>
                 </div>
 
-                <div className="flex items-end">
-                  <button
-                    onClick={handleAddSaleItem}
-                    disabled={!saleItemPickId}
-                    className={`w-full sm:w-auto px-5 py-3 rounded-[12px] border transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                      saleItemPickId
-                        ? "border-[#D6B25E] bg-[#FAF6EC] text-[#B8943C] hover:bg-[#D6B25E] hover:text-white"
-                        : "border-[#E5E7EB] bg-[#F7F6F3] text-[#9CA3AF] cursor-not-allowed"
-                    }`}
-                    style={{ fontSize: "0.85rem" }}
-                  >
-                    <Plus className="w-4 h-4" />
-                    စာရင်းထဲ ထည့်ရန်
-                  </button>
+                {/* Add button */}
+                <button
+                  onClick={handleAddSaleItem}
+                  disabled={!saleItemPickId || !salePriceStr}
+                  className={`w-full px-5 py-3 rounded-[12px] border transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                    saleItemPickId && salePriceStr
+                      ? "border-[#D6B25E] bg-[#FAF6EC] text-[#B8943C] hover:bg-[#D6B25E] hover:text-white"
+                      : "border-[#E5E7EB] bg-[#F7F6F3] text-[#9CA3AF] cursor-not-allowed"
+                  }`}
+                  style={{ fontSize: "0.85rem" }}
+                >
+                  <Plus className="w-4 h-4" />
+                  ပစ္စည်းထည့်ရန်
+                </button>
+                <p className="text-[#9CA3AF] text-center" style={{ fontSize: "0.7rem" }}>
+                  တစ်ကြိမ်တည်းတွင် ပစ္စည်းများစွာ ထည့်နိုင်သည်
+                </p>
+              </div>
+            </div>
+
+            {/* ─── 3) RECEIPT ITEM LIST (CART) ─── */}
+            <div className="bg-white rounded-[12px] border border-[#E5E7EB] shadow-[0_1px_3px_rgba(0,0,0,0.04)] p-5 sm:p-7">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <ShoppingCart className="w-5 h-5 text-[#D6B25E]" />
+                  <h4 className="text-[#1F2937]" style={{ fontSize: "0.95rem" }}>ဒီဘောင်ချာထဲရှိ ပစ္စည်းများ</h4>
                 </div>
+                {saleItems.length > 0 && (
+                  <span className="px-2.5 py-1 rounded-full bg-[#D6B25E] text-white" style={{ fontSize: "0.7rem" }}>
+                    {saleItems.length}
+                  </span>
+                )}
               </div>
 
-              {/* ── Sale Items List ── */}
-              {saleItems.length > 0 && (
-                <div className="border-t border-[#E5E7EB] pt-4">
-                  <div className="flex items-center gap-2 mb-3">
-                    <Package className="w-4 h-4 text-[#9CA3AF]" />
-                    <span className="text-[#6B7280]" style={{ fontSize: "0.85rem" }}>
-                      ရောင်းချမည့် ပစ္စည်းများ ({saleItems.length})
-                    </span>
+              {saleItems.length > 0 ? (
+                <>
+                  {/* Desktop table header */}
+                  <div className="hidden sm:grid grid-cols-[1fr_auto_auto_auto_auto] gap-2 px-2 py-2 border-b border-[#E5E7EB] mb-1">
+                    <span className="text-[#6B7280]" style={{ fontSize: "0.7rem" }}>ပစ္စည်းအမည်</span>
+                    <span className="text-[#6B7280] text-center w-24" style={{ fontSize: "0.7rem" }}>အရေအတွက်</span>
+                    <span className="text-[#6B7280] text-right w-20" style={{ fontSize: "0.7rem" }}>ဈေးနှုန်း</span>
+                    <span className="text-[#6B7280] text-right w-24" style={{ fontSize: "0.7rem" }}>စုစုပေါင်း</span>
+                    <span className="w-8"></span>
                   </div>
-                  <div className="space-y-0">
+
+                  {/* Desktop rows */}
+                  <div className="hidden sm:block space-y-0">
                     {saleItems.map((item) => {
                       const stock = getStockForItem(item.name);
                       const remaining = stock - item.quantity;
                       const isLow = remaining >= 0 && remaining <= (stockData.find((s) => s.name === item.name)?.lowStockThreshold ?? 5);
                       return (
-                        <div key={item.id} className="flex items-center gap-3 py-3 border-b border-[#E5E7EB]/60 last:border-b-0">
-                          <div className="flex-1 min-w-0">
-                            <span className="text-[#1F2937] truncate block" style={{ fontSize: "0.9rem" }}>
-                              {item.name}
-                            </span>
-                            <span className="text-[#9CA3AF]" style={{ fontSize: "0.7rem" }}>
-                              လက်ကျန်: {stock} → {remaining}
-                              {isLow && <span className="text-amber-600 ml-1">(လက်ကျန်နည်း)</span>}
-                            </span>
+                        <div key={item.id} className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-2 items-center py-3 px-2 border-b border-[#E5E7EB]/60 last:border-b-0">
+                          <div className="min-w-0">
+                            <span className="text-[#1F2937] truncate block" style={{ fontSize: "0.9rem" }}>{item.name}</span>
+                            {isLow && (
+                              <span className="text-amber-600" style={{ fontSize: "0.65rem" }}>
+                                လက်ကျန်: {stock} → {remaining} (လက်ကျန်နည်း)
+                              </span>
+                            )}
                           </div>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <button onClick={() => updateSaleItemQty(item.id, -1)} className="w-8 h-8 rounded-full bg-white border border-[#E5E7EB] flex items-center justify-center text-[#6B7280] hover:bg-[#FAF6EC] hover:border-[#D6B25E]/40 transition-colors cursor-pointer active:scale-95">
-                              <Minus className="w-3.5 h-3.5" />
+                          <div className="flex items-center gap-1.5 shrink-0 w-24 justify-center">
+                            <button onClick={() => updateSaleItemQty(item.id, -1)} className="w-7 h-7 rounded-full bg-white border border-[#E5E7EB] flex items-center justify-center text-[#6B7280] hover:bg-[#FAF6EC] hover:border-[#D6B25E]/40 transition-colors cursor-pointer active:scale-95">
+                              <Minus className="w-3 h-3" />
                             </button>
-                            <span className="w-10 text-center text-[#1F2937]" style={{ fontSize: "1rem" }}>
-                              {item.quantity}
-                            </span>
-                            <button onClick={() => updateSaleItemQty(item.id, 1)} className="w-8 h-8 rounded-full bg-white border border-[#E5E7EB] flex items-center justify-center text-[#6B7280] hover:bg-[#FAF6EC] hover:border-[#D6B25E]/40 transition-colors cursor-pointer active:scale-95">
-                              <Plus className="w-3.5 h-3.5" />
+                            <span className="w-8 text-center text-[#1F2937]" style={{ fontSize: "0.9rem" }}>{item.quantity}</span>
+                            <button onClick={() => updateSaleItemQty(item.id, 1)} className="w-7 h-7 rounded-full bg-white border border-[#E5E7EB] flex items-center justify-center text-[#6B7280] hover:bg-[#FAF6EC] hover:border-[#D6B25E]/40 transition-colors cursor-pointer active:scale-95">
+                              <Plus className="w-3 h-3" />
                             </button>
                           </div>
-                          <button onClick={() => removeSaleItem(item.id)} className="w-8 h-8 rounded-full flex items-center justify-center text-[#9CA3AF] hover:bg-red-50 hover:text-[#DC2626] transition-colors cursor-pointer shrink-0">
+                          <span className="text-right text-[#6B7280] w-20" style={{ fontSize: "0.85rem" }}>{item.price.toLocaleString()}</span>
+                          <span className="text-right text-[#1F2937] font-medium w-24" style={{ fontSize: "0.85rem" }}>{item.total.toLocaleString()}</span>
+                          <button onClick={() => removeSaleItem(item.id)} className="w-7 h-7 rounded-full flex items-center justify-center text-[#9CA3AF] hover:bg-red-50 hover:text-[#DC2626] transition-colors cursor-pointer shrink-0">
                             <X className="w-4 h-4" />
                           </button>
                         </div>
                       );
                     })}
                   </div>
-                </div>
-              )}
 
-              {saleItems.length === 0 && (
-                <div className="border-t border-[#E5E7EB] pt-8 pb-4 text-center">
+                  {/* Mobile stacked cards */}
+                  <div className="sm:hidden divide-y divide-[#E5E7EB]/60">
+                    {saleItems.map((item) => {
+                      const stock = getStockForItem(item.name);
+                      const remaining = stock - item.quantity;
+                      const isLow = remaining >= 0 && remaining <= (stockData.find((s) => s.name === item.name)?.lowStockThreshold ?? 5);
+                      return (
+                        <div key={item.id} className="py-3.5 px-1 space-y-2">
+                          {/* Row 1: item name + delete */}
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <span className="text-[#1F2937] block" style={{ fontSize: "0.95rem" }}>{item.name}</span>
+                              <span className="text-[#9CA3AF]" style={{ fontSize: "0.75rem" }}>
+                                {item.price.toLocaleString()} × {item.quantity} = {item.total.toLocaleString()} ကျပ်
+                              </span>
+                              {isLow && (
+                                <span className="text-amber-600 block" style={{ fontSize: "0.65rem" }}>
+                                  လက်ကျန်: {stock} → {remaining} (လက်ကျန်နည်း)
+                                </span>
+                              )}
+                            </div>
+                            <button onClick={() => removeSaleItem(item.id)} className="w-8 h-8 rounded-full flex items-center justify-center text-[#9CA3AF] hover:bg-red-50 hover:text-[#DC2626] transition-colors cursor-pointer shrink-0 -mt-0.5">
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                          {/* Row 2: quantity controls + line total */}
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <button onClick={() => updateSaleItemQty(item.id, -1)} className="w-8 h-8 rounded-full bg-white border border-[#E5E7EB] flex items-center justify-center text-[#6B7280] hover:bg-[#FAF6EC] hover:border-[#D6B25E]/40 transition-colors cursor-pointer active:scale-95">
+                                <Minus className="w-3.5 h-3.5" />
+                              </button>
+                              <span className="w-10 text-center text-[#1F2937] font-medium" style={{ fontSize: "1rem" }}>{item.quantity}</span>
+                              <button onClick={() => updateSaleItemQty(item.id, 1)} className="w-8 h-8 rounded-full bg-white border border-[#E5E7EB] flex items-center justify-center text-[#6B7280] hover:bg-[#FAF6EC] hover:border-[#D6B25E]/40 transition-colors cursor-pointer active:scale-95">
+                                <Plus className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                            <span className="text-[#1F2937] font-semibold" style={{ fontSize: "0.95rem" }}>{item.total.toLocaleString()} Ks</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* ─── 4) SUMMARY ─── */}
+                  <div className="mt-4 pt-4 border-t-2 border-[#D6B25E]/30 space-y-2">
+                    <div className="flex items-center justify-between px-2">
+                      <span className="text-[#6B7280]" style={{ fontSize: "0.85rem" }}>စုစုပေါင်းပစ္စည်းအရေအတွက်</span>
+                      <span className="text-[#1F2937]" style={{ fontSize: "0.9rem" }}>{saleTotalQty} ခု</span>
+                    </div>
+                    <div className="flex items-center justify-between px-2 py-2 rounded-[10px] bg-[#FAF6EC]">
+                      <span className="text-[#B8943C] font-medium" style={{ fontSize: "0.95rem" }}>စုစုပေါင်းငွေ</span>
+                      <span className="text-[#B8943C] font-bold" style={{ fontSize: "1.15rem" }}>{saleGrandTotal.toLocaleString()} ကျပ်</span>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="py-8 text-center">
                   <Package className="w-10 h-10 mx-auto mb-2 text-[#E5E7EB]" />
                   <p className="text-[#9CA3AF]" style={{ fontSize: "0.85rem" }}>
-                    ဖောက်သည် ရွေးချယ်ပြီး ပစ္စည်းများ ထည့်သွင်းပါ။
+                    ၀ယ်သူအမည် ရွေးချယ်ပြီး ပစ္စည်းများ ထည့်သွင်းပါ။
                   </p>
                 </div>
               )}
+            </div>
 
-              {/* ── Sale Date ── */}
-              <div>
-                <label className="block text-[#6B7280] mb-1.5" style={{ fontSize: "0.75rem" }}>
-                  ရောင်းချသည့် ရက်စွဲ
-                </label>
-                <div className="relative">
-                  <input
-                    ref={saleDateInputRef}
-                    type="date"
-                    value={saleDate}
-                    max={(() => { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`; })()}
-                    onChange={(e) => {
-                      if (e.target.value) {
-                        setSaleDate(e.target.value);
-                        setSaleDateModified(true);
-                      }
-                    }}
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                    style={{ zIndex: 1 }}
-                  />
-                  <div
-                    className="w-full flex items-center justify-between px-4 py-3.5 sm:py-3 rounded-[12px] border border-[#E5E7EB] bg-white text-[#1F2937] hover:border-[#D6B25E]/50 transition-all pointer-events-none"
-                    style={{ fontSize: "0.9rem", minHeight: "48px" }}
-                  >
-                    <span>{formatDisplayDate(saleDate)}</span>
-                    <CalendarDays className="w-4.5 h-4.5 text-[#9CA3AF] shrink-0" />
+            {/* Error */}
+            {saleError && (
+              <div className="flex items-center gap-2 px-4 py-3 rounded-[12px] bg-red-50 border border-red-200">
+                <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
+                <p className="text-red-600" style={{ fontSize: "0.8rem" }}>{saleError}</p>
+              </div>
+            )}
+
+            {/* ─── 5) ACTION BUTTONS ─── */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              <button
+                onClick={trySaleSubmit}
+                disabled={saleItems.length === 0 || !saleCustomer || saleSubmitted || saleSubmitting}
+                className={`flex-1 flex items-center justify-center gap-2 px-6 py-3.5 rounded-[12px] transition-all cursor-pointer shadow-[0_1px_2px_rgba(0,0,0,0.08)] ${
+                  saleSubmitted
+                    ? "bg-green-500 text-white shadow-none"
+                    : saleItems.length === 0 || !saleCustomer || saleSubmitting
+                    ? "bg-[#E5E7EB] text-[#9CA3AF] cursor-not-allowed shadow-none"
+                    : "bg-[#D6B25E] hover:bg-[#B8943C] text-white"
+                }`}
+                style={{ fontSize: "0.9rem" }}
+              >
+                {saleSubmitting ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" /> လုပ်ဆောင်နေသည်...</>
+                ) : saleSubmitted ? (
+                  <><Check className="w-4 h-4" /> မှတ်တမ်းတင်ပြီး!</>
+                ) : !saleCustomer ? (
+                  "ဝယ်သူရွေးရန်လိုအပ်သည်"
+                ) : (
+                  <><Check className="w-4 h-4" /> ဘောက်ချာ သိမ်းမည်</>
+                )}
+              </button>
+              <button
+                onClick={handleSaveAndPrint}
+                disabled={saleItems.length === 0 || !saleCustomer || saleSubmitted || saleSubmitting}
+                className={`flex-1 flex items-center justify-center gap-2 px-6 py-3.5 rounded-[12px] transition-all cursor-pointer border ${
+                  saleItems.length === 0 || !saleCustomer || saleSubmitting || saleSubmitted
+                    ? "bg-[#F7F6F3] text-[#9CA3AF] cursor-not-allowed border-[#E5E7EB]"
+                    : "bg-white text-[#1F2937] border-[#E5E7EB] hover:bg-[#FAF6EC] hover:border-[#D6B25E]/50"
+                }`}
+                style={{ fontSize: "0.9rem" }}
+              >
+                <Printer className="w-4 h-4" />
+                သိမ်းပြီး ပရင့်ထုတ်မည်
+              </button>
+              <button
+                onClick={handleSaleCancel}
+                className="sm:w-auto px-5 py-3.5 rounded-[12px] border border-[#E5E7EB] text-[#6B7280] hover:bg-red-50 hover:text-[#DC2626] hover:border-red-200 transition-all cursor-pointer"
+                style={{ fontSize: "0.85rem" }}
+              >
+                <Trash2 className="w-4 h-4 mx-auto sm:mx-0" />
+              </button>
+            </div>
+
+            {/* ─── RECEIPT PREVIEW (inline, optional) ─── */}
+            {saleItems.length > 0 && saleCustomer && (
+              <details className="bg-[#FAFAF8] rounded-[12px] border border-[#E5E7EB] overflow-hidden">
+                <summary className="px-5 py-3 cursor-pointer text-[#6B7280] hover:text-[#1F2937] transition-colors" style={{ fontSize: "0.85rem" }}>
+                  ဘောင်ချာ အကြိုကြည့်ရန်
+                </summary>
+                <div className="px-5 pb-5">
+                  <div className="bg-white border border-[#E5E7EB] rounded-[10px] p-5 max-w-md mx-auto">
+                    <div className="text-center mb-4">
+                      <h3 className="text-[#1F2937] font-bold" style={{ fontSize: "1.1rem" }}>ACT Bakery</h3>
+                      <p className="text-[#6B7280]" style={{ fontSize: "0.85rem" }}>ငွေလက်ငင်းဖြတ်ပိုင်း</p>
+                    </div>
+                    <div className="flex justify-between mb-1" style={{ fontSize: "0.8rem" }}>
+                      <span className="text-[#6B7280]">၀ယ်သူအမည်:</span>
+                      <span className="text-[#1F2937]">{saleCustomer.name}</span>
+                    </div>
+                    <div className="flex justify-between mb-1" style={{ fontSize: "0.8rem" }}>
+                      <span className="text-[#6B7280]">နေ့စွဲ:</span>
+                      <span className="text-[#1F2937]">{formatDisplayDate(saleDate)}</span>
+                    </div>
+                    {receiptNo && (
+                      <div className="flex justify-between mb-1" style={{ fontSize: "0.8rem" }}>
+                        <span className="text-[#6B7280]">ဘောင်ချာအမှတ်:</span>
+                        <span className="text-[#1F2937]">{receiptNo}</span>
+                      </div>
+                    )}
+                    <div className="border-t border-dashed border-[#E5E7EB] my-3"></div>
+                    <table className="w-full" style={{ fontSize: "0.8rem" }}>
+                      <thead>
+                        <tr className="text-[#6B7280]">
+                          <th className="text-left pb-1">ပစ္စည်း</th>
+                          <th className="text-center pb-1">ခု</th>
+                          <th className="text-right pb-1">ဈေး</th>
+                          <th className="text-right pb-1">ပေါင်း</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {saleItems.map((item) => (
+                          <tr key={item.id} className="text-[#1F2937]">
+                            <td className="py-0.5">{item.name}</td>
+                            <td className="text-center">{item.quantity}</td>
+                            <td className="text-right">{item.price.toLocaleString()}</td>
+                            <td className="text-right">{item.total.toLocaleString()}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <div className="border-t border-dashed border-[#E5E7EB] my-3"></div>
+                    <div className="flex justify-between font-bold text-[#1F2937]" style={{ fontSize: "0.9rem" }}>
+                      <span>စုစုပေါင်း</span>
+                      <span>{saleGrandTotal.toLocaleString()} ကျပ်</span>
+                    </div>
                   </div>
                 </div>
-                {saleDate !== (() => { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`; })() && (
-                  <p className="text-amber-600 mt-2 flex items-center gap-1.5" style={{ fontSize: "0.75rem" }}>
-                    <CalendarDays className="w-3.5 h-3.5 shrink-0" />
-                    ယနေ့ မဟုတ်သော ရက်စွဲအတွက် မှတ်တမ်းတင်နေပါသည်
-                  </p>
-                )}
-              </div>
-
-              {/* Error */}
-              {saleError && (
-                <div className="flex items-center gap-2 px-4 py-3 rounded-[12px] bg-red-50 border border-red-200">
-                  <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
-                  <p className="text-red-600" style={{ fontSize: "0.8rem" }}>{saleError}</p>
-                </div>
-              )}
-
-              {/* Buttons */}
-              <div className="flex flex-col sm:flex-row gap-3 pt-2">
-                <button
-                  onClick={trySaleSubmit}
-                  disabled={saleItems.length === 0 || !saleCustomer || saleSubmitted || saleSubmitting}
-                  className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 rounded-[12px] transition-all cursor-pointer shadow-[0_1px_2px_rgba(0,0,0,0.08)] ${
-                    saleSubmitted
-                      ? "bg-green-500 text-white"
-                      : saleItems.length === 0 || !saleCustomer || saleSubmitting
-                      ? "bg-[#E5E7EB] text-[#9CA3AF] cursor-not-allowed shadow-none"
-                      : "bg-[#D6B25E] hover:bg-[#B8943C] text-white"
-                  }`}
-                  style={{ fontSize: "0.9rem" }}
-                >
-                  {saleSubmitting ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      လုပ်ဆောင်နေသည်...
-                    </>
-                  ) : saleSubmitted ? (
-                    <>
-                      <Check className="w-4 h-4" />
-                      မှတ်တမ်းတင်ပြီး!
-                    </>
-                  ) : (
-                    <>
-                      <ShoppingCart className="w-4 h-4" />
-                      ရောင်းချမှု တင်သွင်းရန်
-                    </>
-                  )}
-                </button>
-                <button
-                  onClick={handleSaleCancel}
-                  className="flex-1 sm:flex-none px-6 py-3 rounded-[12px] border border-[#E5E7EB] text-[#6B7280] hover:bg-[#FAF6EC] hover:text-[#1F2937] transition-all cursor-pointer"
-                  style={{ fontSize: "0.9rem" }}
-                >
-                  မလုပ်တော့ပါ
-                </button>
-              </div>
-            </div>
+              </details>
+            )}
           </div>
+        )}
+
+        {/* Hidden print-only receipt */}
+        {activeMode === "sale" && saleCustomer && (
+          <ReceiptPrint
+            ref={receiptRef}
+            customerName={saleCustomer.name}
+            date={saleDate}
+            receiptNo={receiptNo || undefined}
+            items={saleItems.map((si): ReceiptLineItem => ({
+              id: si.id,
+              name: si.name,
+              quantity: si.quantity,
+              price: si.price,
+              total: si.total,
+            }))}
+            grandTotal={saleGrandTotal}
+          />
         )}
       </div>
 
@@ -1318,7 +1643,7 @@ export function DataEntryContent({ role = "staff", onNavigate }: DataEntryProps)
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-2">
                 <UserPlus className="w-5 h-5 text-[#D6B25E]" />
-                <h3 className="text-[#1F2937]">ဖောက်သည် အသစ် ထည့်ရန်</h3>
+                <h3 className="text-[#1F2937]">၀ယ်သူအမည် အသစ် ထည့်ရန်</h3>
               </div>
               <button
                 onClick={() => { setShowNewCustomer(false); setNewCustName(""); setNewCustPhone(""); setNewCustAddress(""); }}
@@ -1331,9 +1656,9 @@ export function DataEntryContent({ role = "staff", onNavigate }: DataEntryProps)
             <div className="space-y-4">
               <div>
                 <label className="block text-[#6B7280] mb-1.5" style={{ fontSize: "0.75rem" }}>
-                  ဖောက်သည် အမည် <span className="text-red-400">*</span>
+                  ၀ယ်သူအမည် <span className="text-red-400">*</span>
                 </label>
-                <input type="text" placeholder="ဖောက်သည် အမည် ထည့်ပါ..." value={newCustName} onChange={(e) => setNewCustName(e.target.value)} className="w-full px-4 py-3 rounded-[12px] border border-[#E5E7EB] bg-white text-[#1F2937] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#D6B25E]/30 focus:border-[#D6B25E] transition-all" style={{ fontSize: "0.9rem" }} autoFocus />
+                <input type="text" placeholder="၀ယ်သူအမည် ထည့်ပါ..." value={newCustName} onChange={(e) => setNewCustName(e.target.value)} className="w-full px-4 py-3 rounded-[12px] border border-[#E5E7EB] bg-white text-[#1F2937] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#D6B25E]/30 focus:border-[#D6B25E] transition-all" style={{ fontSize: "0.9rem" }} autoFocus />
               </div>
               <div>
                 <label className="block text-[#6B7280] mb-1.5" style={{ fontSize: "0.75rem" }}>
@@ -1361,7 +1686,7 @@ export function DataEntryContent({ role = "staff", onNavigate }: DataEntryProps)
                 style={{ fontSize: "0.9rem" }}
               >
                 {newCustSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                {newCustSaving ? "Saving..." : "ဖောက်သည် သိမ်းဆည်းရန်"}
+                {newCustSaving ? "Saving..." : "၀ယ်သူအမည် သိမ်းဆည်းရန်"}
               </button>
               <button
                 onClick={() => { setShowNewCustomer(false); setNewCustName(""); setNewCustPhone(""); setNewCustAddress(""); }}
@@ -1386,9 +1711,9 @@ export function DataEntryContent({ role = "staff", onNavigate }: DataEntryProps)
             <div className="w-14 h-14 rounded-full bg-green-50 border border-green-100 flex items-center justify-center mx-auto mb-3">
               <UserPlus className="w-7 h-7 text-green-500" />
             </div>
-            <p className="text-[#1F2937]" style={{ fontSize: "1rem" }}>ဖောက်သည် သိမ်းဆည်းပြီး!</p>
+            <p className="text-[#1F2937]" style={{ fontSize: "1rem" }}>၀ယ်သူအမည် သိမ်းဆည်းပြီး!</p>
             <p className="text-[#9CA3AF] mt-1" style={{ fontSize: "0.8rem" }}>
-              ဖောက်သည်အသစ် အောင်မြင်စွာ ထည့်သွင်းပြီးပါပြီ
+              ၀ယ်သူအမည်အသစ် အောင်မြင်စွာ ထည့်သွင်းပြီးပါပြီ
             </p>
           </div>
         </div>

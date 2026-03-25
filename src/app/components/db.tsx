@@ -10,6 +10,7 @@ export interface Item {
   id: string;
   name: string;
   low_stock_threshold: number;
+  default_price: number;
   is_active: boolean;
   created_at: string;
 }
@@ -21,6 +22,53 @@ export interface StockRow {
   total_produced: number;
   total_sold: number;
   current_stock: number;
+  default_price: number;
+}
+
+export interface VItemStock {
+  item_id: string;
+  name: string;
+  low_stock_threshold: number;
+  total_produced: number;
+  total_sold: number;
+  current_stock: number;
+  default_price: number;
+}
+
+export interface ReceiptHeaderInsert {
+  receipt_no: string;
+  customer_id: string | null;
+  receipt_date: string;
+  subtotal: number;
+  discount_amount: number;
+  grand_total: number;
+  note: string | null;
+  created_by: string | null;
+  status: 'posted' | 'draft' | 'cancelled';
+}
+
+export interface ReceiptLineInsert {
+  receipt_id: string;
+  item_id: string;
+  item_name_snapshot: string;
+  qty: number;
+  unit_price: number;
+  line_total: number;
+}
+
+export interface SalesReceipt {
+  id: string;
+  receipt_no: string;
+  customer_id: string | null;
+  receipt_date: string;
+  subtotal: number;
+  discount_amount: number;
+  grand_total: number;
+  note: string | null;
+  created_by: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Customer {
@@ -66,10 +114,11 @@ export async function getItems(): Promise<Item[]> {
 export async function createItem(
   name: string,
   low_stock_threshold: number,
+  default_price: number = 0,
 ): Promise<Item> {
   const { data, error } = await supabase
     .from("items")
-    .insert({ name, low_stock_threshold, is_active: true })
+    .insert({ name, low_stock_threshold, default_price, is_active: true })
     .select()
     .single();
   if (error) throw new Error(`Failed to create item: ${error.message}`);
@@ -80,10 +129,11 @@ export async function updateItem(
   id: string,
   name: string,
   low_stock_threshold: number,
+  default_price: number = 0,
 ): Promise<Item> {
   const { data, error } = await supabase
     .from("items")
-    .update({ name, low_stock_threshold })
+    .update({ name, low_stock_threshold, default_price })
     .eq("id", id)
     .select()
     .single();
@@ -114,6 +164,23 @@ export async function getStock(): Promise<StockRow[]> {
   const { data, error } = await supabase.from("v_item_stock").select("*");
   if (error) throw new Error(`Failed to load stock: ${error.message}`);
   return data || [];
+}
+
+/**
+ * Load items from the v_item_stock view with all fields including default_price.
+ */
+export async function getVItemStock(): Promise<VItemStock[]> {
+  const { data, error } = await supabase.from("v_item_stock").select("*");
+  if (error) throw new Error(`Failed to load v_item_stock: ${error.message}`);
+  return (data || []).map((row: any) => ({
+    item_id: row.item_id,
+    name: row.name,
+    low_stock_threshold: row.low_stock_threshold ?? 0,
+    total_produced: row.total_produced ?? 0,
+    total_sold: row.total_sold ?? 0,
+    current_stock: row.current_stock ?? 0,
+    default_price: row.default_price ?? 0,
+  }));
 }
 
 /**
@@ -351,6 +418,140 @@ export async function deleteSalesLog(id: string) {
 }
 
 // ════════════════════════════════════
+//  SALES RECEIPTS (new schema)
+// ════════════════════════════════════
+
+/**
+ * Create a receipt header + lines in sales_receipts / sales_receipt_lines.
+ * Returns the inserted receipt row.
+ */
+export async function createSalesReceipt(
+  header: ReceiptHeaderInsert,
+  lines: Omit<ReceiptLineInsert, "receipt_id">[],
+): Promise<SalesReceipt> {
+  // Get current user id for created_by
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const created_by = session?.user?.id || null;
+
+  // Insert receipt header
+  const { data: receipt, error: hErr } = await supabase
+    .from("sales_receipts")
+    .insert({ ...header, created_by })
+    .select()
+    .single();
+  if (hErr) throw new Error(`ဘောင်ချာ သိမ်းဆည်း မအောင်မြင်ပါ: ${hErr.message}`);
+
+  // Insert receipt lines
+  const lineRows = lines.map((l) => ({
+    receipt_id: receipt.id,
+    item_id: l.item_id,
+    item_name_snapshot: l.item_name_snapshot,
+    qty: l.qty,
+    unit_price: l.unit_price,
+    line_total: l.line_total,
+  }));
+
+  const { error: lErr } = await supabase
+    .from("sales_receipt_lines")
+    .insert(lineRows);
+  if (lErr) {
+    // Roll back: delete the orphan receipt header
+    await supabase.from("sales_receipts").delete().eq("id", receipt.id);
+    throw new Error(`ဘောင်ချာ အသေးစိတ် သိမ်းဆည်း မအောင်မြင်ပါ: ${lErr.message}`);
+  }
+
+  return receipt as SalesReceipt;
+}
+
+export interface SalesReceiptLine {
+  id: string;
+  receipt_id: string;
+  item_id: string;
+  item_name_snapshot: string;
+  qty: number;
+  unit_price: number;
+  line_total: number;
+  created_at: string;
+}
+
+export interface SalesReceiptWithCustomer extends SalesReceipt {
+  customer_name: string;
+}
+
+/**
+ * List all receipts with customer name, ordered newest first.
+ */
+export async function getSalesReceipts(): Promise<SalesReceiptWithCustomer[]> {
+  const { data, error } = await supabase
+    .from("sales_receipts")
+    .select("*, customers(name)")
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(`Failed to load receipts: ${error.message}`);
+  return (data || []).map((r: any) => ({
+    ...r,
+    customer_name: r.customers?.name || "Walk-in",
+  }));
+}
+
+/**
+ * Get receipt lines for a given receipt id.
+ */
+export async function getSalesReceiptLines(receiptId: string): Promise<SalesReceiptLine[]> {
+  const { data, error } = await supabase
+    .from("sales_receipt_lines")
+    .select("*")
+    .eq("receipt_id", receiptId)
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(`Failed to load receipt lines: ${error.message}`);
+  return data || [];
+}
+
+/**
+ * Delete a sales receipt and its lines (lines have FK cascade, but delete lines first to be safe).
+ */
+export async function deleteSalesReceipt(id: string): Promise<void> {
+  // Delete lines first
+  await supabase.from("sales_receipt_lines").delete().eq("receipt_id", id);
+  const { data, error } = await supabase
+    .from("sales_receipts")
+    .delete()
+    .eq("id", id)
+    .select();
+  if (error) throw new Error(`Failed to delete receipt: ${error.message}`);
+  if (!data || data.length === 0) {
+    throw new Error("Delete blocked: RLS policy may not allow this operation.");
+  }
+}
+
+/**
+ * Get the next receipt number for a given date.
+ * Format: BCH-YYYYMMDD-NNNNN where NNNNN resets daily.
+ */
+export async function getNextReceiptNumber(receiptDate: string): Promise<string> {
+  const dateCode = receiptDate.replace(/-/g, "");
+  const prefix = `BCH-${dateCode}-`;
+
+  const { data, error } = await supabase
+    .from("sales_receipts")
+    .select("receipt_no")
+    .like("receipt_no", `${prefix}%`);
+
+  if (error) throw new Error(`Failed to query receipt numbers: ${error.message}`);
+
+  let maxSeq = 0;
+  for (const row of data || []) {
+    const tail = row.receipt_no.slice(prefix.length);
+    const num = parseInt(tail, 10);
+    if (!isNaN(num) && num > maxSeq) maxSeq = num;
+  }
+
+  const nextSeq = String(maxSeq + 1).padStart(5, "0");
+  return `${prefix}${nextSeq}`;
+}
+
+// ════════════════════════════════════
 //  CUSTOMERS
 // ════════════════════════════════════
 export async function getCustomers(): Promise<Customer[]> {
@@ -514,6 +715,7 @@ export async function getStockWithToday() {
       currentStock: stock ? Math.max(0, stock.current_stock ?? 0) : 0,
       todayProduced: todayMap.get(item.id) || 0,
       lowStockThreshold: item.low_stock_threshold,
+      defaultPrice: stock?.default_price ?? item.default_price ?? 0,
     };
   });
 }

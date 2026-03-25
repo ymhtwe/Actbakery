@@ -23,8 +23,6 @@ import {
   ArrowDownRight,
 } from "lucide-react";
 import {
-  BarChart,
-  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -32,9 +30,6 @@ import {
   ResponsiveContainer,
   LineChart,
   Line,
-  Legend,
-  Cell,
-  LabelList,
 } from "recharts";
 import { FilterBar } from "./FilterBar";
 import { DataEntryContent } from "./DataEntryContent";
@@ -44,6 +39,7 @@ import { UserManagement } from "./UserManagement";
 import { SalesContent } from "./SalesContent";
 import { ProductionLogContent } from "./ProductionLogContent";
 import { CustomerManagement } from "./CustomerManagement";
+import { SalesReportContent } from "./SalesReportContent";
 
 // ── Sidebar items ──
 const sidebarItems = [
@@ -57,7 +53,7 @@ const sidebarItems = [
 ];
 
 // Tabs visible to staff role
-const staffVisibleTabs = new Set(["dashboard", "data_entry"]);
+const staffVisibleTabs = new Set(["dashboard", "data_entry", "sales"]);
 
 // ── Types ──
 interface Product {
@@ -66,6 +62,7 @@ interface Product {
   todayProduced: number;
   currentStock: number;
   lowStockThreshold: number;
+  defaultPrice: number;
   status: "in_stock" | "low_stock" | "critical";
 }
 
@@ -73,6 +70,7 @@ interface ItemData {
   id: string;
   name: string;
   low_stock_threshold: number;
+  default_price?: number;
   is_active?: boolean;
 }
 
@@ -126,7 +124,7 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
   // Settings modal state
   const [showItemModal, setShowItemModal] = useState(false);
   const [editingItem, setEditingItem] = useState<Product | null>(null);
-  const [modalForm, setModalForm] = useState({ name: "", threshold: 10 });
+  const [modalForm, setModalForm] = useState({ name: "", threshold: 10, defaultPrice: 0 });
   const [deleteConfirm, setDeleteConfirm] = useState<Product | null>(null);
   const [deleteUsage, setDeleteUsage] = useState<{ productionCount: number; salesCount: number } | null>(null);
   const [deleteChecking, setDeleteChecking] = useState(false);
@@ -192,6 +190,7 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
         todayProduced: s.todayProduced,
         currentStock: s.currentStock,
         lowStockThreshold: s.lowStockThreshold,
+        defaultPrice: s.defaultPrice ?? 0,
         status: deriveStatus(s.currentStock, s.lowStockThreshold),
       }));
       setProducts(prods);
@@ -269,21 +268,6 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
       return sanitized;
     });
   }, [dateFrom, dateTo, dailyData, products]);
-
-  const topItemsData = useMemo(() => {
-    const names = products.map((p) => p.name).filter(Boolean);
-    const seen = new Set<string>();
-    const totals: { name: string; total: number }[] = [];
-    for (const n of names) {
-      if (seen.has(n)) continue;
-      seen.add(n);
-      totals.push({
-        name: n,
-        total: filteredDaily.reduce((s: number, d: any) => s + ((d[n] as number) || 0), 0),
-      });
-    }
-    return totals.sort((a, b) => b.total - a.total);
-  }, [filteredDaily, products]);
 
   const reportSummary = useMemo(() => {
     if (!filteredDaily.length) return { totalProduced: 0, avgPerDay: 0, highestDay: 0, lowestDay: 0, totalDays: 0, itemCount: 0 };
@@ -364,18 +348,6 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
     );
   };
 
-  // Custom tooltip for horizontal bar chart (top items)
-  const BarTooltip = ({ active, payload }: any) => {
-    if (!active || !payload || payload.length === 0) return null;
-    const data = payload[0]?.payload;
-    return (
-      <div style={{ ...tooltipStyle, fontSize: isMobile ? "0.75rem" : "0.85rem" }}>
-        <p style={{ color: "#374151", fontWeight: 500, marginBottom: "4px" }}>{data?.name}</p>
-        <p style={{ color: "#1F2937", fontWeight: 600 }}>စုစုပေါင်း: {payload[0]?.value} ခု</p>
-      </div>
-    );
-  };
-
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 768px)");
@@ -385,7 +357,6 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
     return () => mq.removeEventListener("change", handler);
   }, []);
 
-  const chartHeight = isMobile ? 220 : 280;
   const reportChartHeight = isMobile ? 200 : 240;
 
   // ── Settings: Save/Delete handlers ──
@@ -394,9 +365,9 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
     setSaving(true);
     try {
       if (editingItem) {
-        await db.updateItem(editingItem.id, modalForm.name.trim(), modalForm.threshold);
+        await db.updateItem(editingItem.id, modalForm.name.trim(), modalForm.threshold, modalForm.defaultPrice);
       } else {
-        await db.createItem(modalForm.name.trim(), modalForm.threshold);
+        await db.createItem(modalForm.name.trim(), modalForm.threshold, modalForm.defaultPrice);
       }
       await loadData();
       setShowItemModal(false);
@@ -615,91 +586,7 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
                   </div>
                 )}
 
-                {/* Production Trend */}
-                <div className="bg-[#F9FAFB] rounded-2xl p-4 sm:p-6 space-y-5 overflow-hidden">
-                  <div>
-                    <h3 className="text-[#1F2937]">ကုန်ထုတ်လုပ်မှု အခြေအနေ</h3>
-                    <p className="text-[#9CA3AF] mt-0.5" style={{ fontSize: "0.85rem" }}>ရက်စွဲနှင့် ပစ္စည်းရွေးချယ်ပြီး ထုတ်လုပ်မှုကို ကြည့်ပါ</p>
-                  </div>
 
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                    <div className={`bg-white rounded-[12px] border border-[#E5E7EB] shadow-[0_1px_2px_rgba(0,0,0,0.02)] p-4 sm:p-6 overflow-hidden ${selectedItem === ALL_ITEMS_LABEL ? "lg:col-span-2" : "lg:col-span-3"}`}>
-                      <h4 className="text-[#1F2937] mb-4">
-                        {selectedItem === ALL_ITEMS_LABEL
-                          ? "နေ့စဉ် ထုတ်လုပ်မှု — ပစ္စည်းအားလုံး (စုစုပေါင်း)"
-                          : `နေ့စဉ် ထုတ်လုပ်မှု — ${selectedItem}`}
-                      </h4>
-                      {filteredDaily.length > 0 ? (
-                        <div style={{ width: "100%", height: chartHeight }}>
-                          <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100}>
-                            <LineChart data={filteredDaily} margin={isMobile ? { top: 20, right: 15, left: -10, bottom: 5 } : { top: 25, right: 30, left: 5, bottom: 5 }}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" opacity={0.6} />
-                              <XAxis dataKey="fullDate" stroke="#9CA3AF" tickLine={false} axisLine={{ stroke: "#E5E7EB" }} style={{ fontSize: isMobile ? "0.65rem" : "0.75rem" }} interval={isMobile ? "preserveStartEnd" : 0} tickFormatter={(v: string) => { const d = new Date(v); return isNaN(d.getTime()) ? v : `${d.getMonth()+1}/${d.getDate()}`; }} />
-                              <YAxis stroke="#9CA3AF" tickLine={false} axisLine={{ stroke: "#E5E7EB" }} width={isMobile ? 40 : 55} style={{ fontSize: isMobile ? "0.65rem" : "0.75rem" }} tickFormatter={(v: number) => v >= 1000 ? `${(v/1000).toFixed(1)}k` : `${v}`} />
-                              <Tooltip content={<CustomTooltip />} />
-                              <Legend verticalAlign="top" align="right" iconType="circle" iconSize={8} wrapperStyle={{ paddingBottom: "12px", fontSize: "0.8rem" }} />
-                              {selectedItem === ALL_ITEMS_LABEL ? (
-                                <Line key="line-total" type="monotone" dataKey="total" name="စုစုပေါင်း" stroke="#D6B25E" strokeWidth={2} dot={{ fill: "#D6B25E", r: isMobile ? 2 : 3 }} activeDot={{ r: isMobile ? 5 : 7, stroke: "#D6B25E", strokeWidth: 2, fill: "#fff" }} label={isMobile ? undefined : { position: "top", fill: "#6B7280", fontSize: 11, offset: 10, formatter: (v: number) => v > 0 ? v.toLocaleString() : "" }} />
-                              ) : (
-                                <Line key={`line-${selectedItem}`} type="monotone" dataKey={selectedItem} name={selectedItem} stroke="#D6B25E" strokeWidth={2} dot={{ fill: "#D6B25E", r: isMobile ? 2 : 3 }} activeDot={{ r: isMobile ? 5 : 7, stroke: "#D6B25E", strokeWidth: 2, fill: "#fff" }} label={isMobile ? undefined : { position: "top", fill: "#6B7280", fontSize: 11, offset: 10, formatter: (v: number) => v > 0 ? v.toLocaleString() : "" }} />
-                              )}
-                            </LineChart>
-                          </ResponsiveContainer>
-                        </div>
-                      ) : (
-                        <div style={{ height: chartHeight }} className="flex items-center justify-center text-[#9CA3AF]"><p style={{ fontSize: "0.85rem" }}>ဒေတာ မရှိပါ</p></div>
-                      )}
-                    </div>
-
-                    {selectedItem === ALL_ITEMS_LABEL && topItemsData.length > 0 && (
-                      <div className="bg-white rounded-[12px] border border-[#E5E7EB] shadow-[0_1px_2px_rgba(0,0,0,0.02)] p-4 sm:p-6 overflow-hidden">
-                        <h4 className="text-[#1F2937] mb-4">ထိပ်တန်း ပစ္စည်းများ</h4>
-                        <div style={{ width: "100%", height: Math.max(isMobile ? 180 : 220, topItemsData.length * (isMobile ? 36 : 40) + 40), overflow: "visible" }}>
-                          <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100}>
-                            <BarChart data={topItemsData} layout="vertical" barCategoryGap="30%" margin={isMobile ? { top: 5, right: 80, left: 0, bottom: 5 } : { top: 5, right: 90, left: 0, bottom: 5 }}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" opacity={0.6} horizontal={false} />
-                              <XAxis type="number" stroke="#9CA3AF" tickLine={false} axisLine={{ stroke: "#E5E7EB" }} style={{ fontSize: isMobile ? "0.65rem" : "0.75rem" }} tickFormatter={(v: number) => v >= 1000 ? `${(v/1000).toFixed(1)}k` : `${v}`} />
-                              <YAxis dataKey="name" type="category" allowDuplicatedCategory={false} stroke="#9CA3AF" tickLine={false} axisLine={{ stroke: "#E5E7EB" }} width={isMobile ? 60 : 80} style={{ fontSize: isMobile ? "0.7rem" : "0.8rem" }} />
-                              <Tooltip content={<BarTooltip />} />
-                              <Bar key="bar-total" dataKey="total" fill="#D6B25E" radius={[0, 6, 6, 0]} maxBarSize={isMobile ? 22 : 28}>
-                                <LabelList dataKey="total" position="right" content={({ x, y, width, height, value }: any) => { if (!value || value <= 0) return null; return (<text x={(x || 0) + (width || 0) + 8} y={(y || 0) + (height || 0) / 2} fill="#6B7280" fontSize={isMobile ? 10 : 12} textAnchor="start" dominantBaseline="middle">{`${Number(value).toLocaleString()} ခု`}</text>); }} />
-                              </Bar>
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <FilterBar {...filterProps} />
-
-                  {/* Daily Totals Table */}
-                  <div className="bg-white rounded-[12px] border border-[#E5E7EB] shadow-[0_1px_2px_rgba(0,0,0,0.02)] p-4 sm:p-6 overflow-hidden">
-                    <h4 className="text-[#1F2937] mb-4">နေ့စဉ် ထုတ်လုပ်မှုစာရင်း</h4>
-                    <div className="overflow-x-auto w-full">
-                      <table className="w-full">
-                        <thead>
-                          <tr className="border-b border-[#E5E7EB]">
-                            <th className="text-left py-3 px-4 text-[#6B7280]" style={{ fontSize: "0.85rem" }}>ရက်စွဲ</th>
-                            <th className="text-center py-3 px-4 text-[#6B7280]" style={{ fontSize: "0.85rem" }}>ထုတ်လုပ်မှု</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {filteredDaily.map((d: any, idx: number) => (
-                            <tr key={d.fullDate || idx} className="border-b border-[#E5E7EB]/60 hover:bg-[#FAF6EC] transition-colors">
-                              <td className="py-3 px-4 text-[#1F2937]" style={{ fontSize: "0.85rem" }}>{d.date}</td>
-                              <td className="py-3 px-4 text-center text-[#1F2937]" style={{ fontSize: "0.85rem" }}>
-                                {selectedItem === ALL_ITEMS_LABEL
-                                  ? (d.total as number)
-                                  : ((d[selectedItem] as number) || 0)}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
               </div>
             )}
 
@@ -710,6 +597,7 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
                   {[
                     { id: "overview", label: "အနှစ်ချုပ်" },
                     { id: "byItem", label: "ပစ္စည်းအလိုက်" },
+                    { id: "sales", label: "ရောင်းငွေ" },
                   ].map((t) => (
                     <button
                       key={t.id}
@@ -899,6 +787,9 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
                     )}
                   </div>
                 )}
+
+                {/* Sales Report Tab */}
+                {reportTab === "sales" && <SalesReportContent />}
               </div>
             )}
 
@@ -1117,7 +1008,7 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
                     <button
                       onClick={() => {
                         setEditingItem(null);
-                        setModalForm({ name: "", threshold: 10 });
+                        setModalForm({ name: "", threshold: 10, defaultPrice: 0 });
                         setShowItemModal(true);
                       }}
                       className="inline-flex items-center gap-2 px-4 py-2.5 rounded-[12px] bg-[#D6B25E] text-white hover:bg-[#C4A24D] transition-all cursor-pointer shadow-[0_1px_2px_rgba(0,0,0,0.08)]"
@@ -1137,6 +1028,7 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
                       <thead>
                         <tr className="border-b border-[#E5E7EB]">
                           <th className="text-left py-3 px-4 text-[#6B7280]" style={{ fontSize: "0.85rem" }}>ကုန်ပစ္စည်းအမည်</th>
+                          <th className="text-center py-3 px-4 text-[#6B7280]" style={{ fontSize: "0.85rem" }}>မူလဈေးနှုန်း</th>
                           <th className="text-center py-3 px-4 text-[#6B7280]" style={{ fontSize: "0.85rem" }}>လက်ရှိလက်ကျန်</th>
                           <th className="text-center py-3 px-4 text-[#6B7280]" style={{ fontSize: "0.85rem" }}>လက်ကျန်နည်း သတ်မှတ်ချက်</th>
                           <th className="text-left py-3 px-4 text-[#6B7280]" style={{ fontSize: "0.85rem" }}>အခြေအနေ</th>
@@ -1149,6 +1041,7 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
                           return (
                             <tr key={item.id} className="border-b border-[#E5E7EB]/60 hover:bg-[#FAF6EC] transition-colors">
                               <td className="py-3.5 px-4 text-[#1F2937]">{item.name}</td>
+                              <td className="py-3.5 px-4 text-center text-[#1F2937]">{(item.defaultPrice ?? 0).toLocaleString()} ကျပ်</td>
                               <td className={`py-3.5 px-4 text-center ${item.currentStock <= item.lowStockThreshold ? "text-[#DC2626]" : "text-[#1F2937]"}`}>{item.currentStock}</td>
                               <td className="py-3.5 px-4 text-center text-[#6B7280]">{item.lowStockThreshold}</td>
                               <td className="py-3.5 px-4">
@@ -1162,7 +1055,7 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
                                   <button
                                     onClick={() => {
                                       setEditingItem(item);
-                                      setModalForm({ name: item.name, threshold: item.lowStockThreshold });
+                                      setModalForm({ name: item.name, threshold: item.lowStockThreshold, defaultPrice: item.defaultPrice ?? 0 });
                                       setShowItemModal(true);
                                     }}
                                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] border border-[#E5E7EB] text-[#6B7280] hover:bg-[#FAF6EC] hover:text-[#B8943C] hover:border-[#D6B25E]/40 transition-all cursor-pointer"
@@ -1186,7 +1079,7 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
                         })}
                         {products.length === 0 && (
                           <tr>
-                            <td colSpan={5} className="py-10 text-center text-[#9CA3AF]">ကုန်ပစ္စည်း မရှိသေးပါ။ "အသစ် ထည့်ရန်" ကို နှိပ်ပါ။</td>
+                            <td colSpan={6} className="py-10 text-center text-[#9CA3AF]">ကုန်ပစ္စည်း မရှိသေးပါ။ "အသစ် ထည့်ရန်" ကို နှိပ်ပါ။</td>
                           </tr>
                         )}
                       </tbody>
@@ -1206,10 +1099,14 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
                               {sc.label}
                             </span>
                           </div>
-                          <div className="grid grid-cols-2 gap-3 mb-4">
+                          <div className="grid grid-cols-3 gap-3 mb-4">
                             <div>
                               <p className="text-[#9CA3AF]" style={{ fontSize: "0.7rem" }}>လက်ရှိလက်ကျန်</p>
                               <p className={item.currentStock <= item.lowStockThreshold ? "text-[#DC2626]" : "text-[#1F2937]"} style={{ fontSize: "1.15rem" }}>{item.currentStock}</p>
+                            </div>
+                            <div className="text-center">
+                              <p className="text-[#9CA3AF]" style={{ fontSize: "0.7rem" }}>မူလဈေးနှုန်း</p>
+                              <p className="text-[#6B7280]" style={{ fontSize: "1.15rem" }}>{(item.defaultPrice ?? 0).toLocaleString()} ကျပ်</p>
                             </div>
                             <div className="text-right">
                               <p className="text-[#9CA3AF]" style={{ fontSize: "0.7rem" }}>လက်ကျန်နည်း သတ်မှတ်ချက်</p>
@@ -1220,7 +1117,7 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
                             <button
                               onClick={() => {
                                 setEditingItem(item);
-                                setModalForm({ name: item.name, threshold: item.lowStockThreshold });
+                                setModalForm({ name: item.name, threshold: item.lowStockThreshold, defaultPrice: item.defaultPrice ?? 0 });
                                 setShowItemModal(true);
                               }}
                               className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-[10px] border border-[#E5E7EB] text-[#6B7280] hover:bg-[#FAF6EC] hover:text-[#B8943C] transition-all cursor-pointer"
@@ -1296,6 +1193,26 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
                     }
                   }}
                   className="w-full px-4 py-2.5 rounded-[10px] border border-[#E5E7EB] bg-white text-[#1F2937] focus:outline-none focus:ring-2 focus:ring-[#D6B25E]/30 focus:border-[#D6B25E] transition-all"
+                  style={{ fontSize: "0.85rem" }}
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[#6B7280]" style={{ fontSize: "0.75rem" }}>မူလဈေးနှုန်း (ကျပ်)</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={modalForm.defaultPrice}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === "") {
+                      setModalForm({ ...modalForm, defaultPrice: "" as any });
+                    } else if (/^\d+$/.test(v)) {
+                      setModalForm({ ...modalForm, defaultPrice: parseInt(v) });
+                    }
+                  }}
+                  placeholder="0"
+                  className="w-full px-4 py-2.5 rounded-[10px] border border-[#E5E7EB] bg-white text-[#1F2937] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#D6B25E]/30 focus:border-[#D6B25E] transition-all"
                   style={{ fontSize: "0.85rem" }}
                 />
               </div>
