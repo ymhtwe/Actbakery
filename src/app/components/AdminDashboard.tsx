@@ -621,7 +621,7 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                       {[
                         { label: "စုစုပေါင်း ထုတ်လုပ်မှု", value: reportSummary.totalProduced.toLocaleString(), sub: selectedItem !== ALL_ITEMS_LABEL ? selectedItem : "ပစ္စည်းအားလုံး", icon: Package, color: "text-[#D6B25E]", bg: "bg-[#FAF6EC]" },
-                        { label: "ပျမ်းမျှ / ရက်", value: reportSummary.avgPerDay.toLocaleString(), sub: `${reportSummary.totalDays} ရက်`, icon: TrendingUp, color: "text-blue-500", bg: "bg-blue-50" },
+                        { label: "ပျမ်းမျှ ထုတ်လုပ်မှု/ရက်", value: reportSummary.avgPerDay.toLocaleString(), sub: `${reportSummary.totalDays} ရက်`, icon: TrendingUp, color: "text-blue-500", bg: "bg-blue-50" },
                         { label: "အမြင့်ဆုံးရက်", value: reportSummary.highestDay.toLocaleString(), sub: "တစ်ရက်တာ အများဆုံး", icon: ArrowUpRight, color: "text-green-500", bg: "bg-green-50" },
                         { label: "အနိမ့်ဆုံးရက်", value: reportSummary.lowestDay.toLocaleString(), sub: "တစ်ရက်တာ အနည်းဆုံး", icon: ArrowDownRight, color: "text-orange-500", bg: "bg-orange-50" },
                       ].map((card) => (
@@ -731,7 +731,7 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
                           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
                             {[
                               { label: "\u1005\u102f\u1005\u102f\u1015\u1031\u102b\u1004\u103a\u1038 \u1011\u102f\u1010\u103a\u101c\u102f\u1015\u103a\u1019\u103e\u102f", value: byItemStats.total },
-                              { label: "\u1015\u103b\u1019\u103a\u1038\u1019\u103b\u103e / \u101b\u1000\u103a", value: byItemStats.avg },
+                              { label: "\u1015\u103b\u1019\u103a\u1038\u1019\u103b\u103e \u1011\u102f\u1010\u103a\u101c\u102f\u1015\u103a\u1019\u103e\u102f/\u101b\u1000\u103a", value: byItemStats.avg },
                               { label: "\u1021\u1019\u103c\u1004\u103a\u1037\u1006\u102f\u1036\u1038\u101b\u1000\u103a", value: byItemStats.highest },
                               { label: "\u1021\u1014\u102d\u1019\u103a\u1037\u1006\u102f\u1036\u1038\u101b\u1000\u103a", value: byItemStats.lowest },
                             ].map((s) => (
@@ -789,7 +789,10 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
                 )}
 
                 {/* Sales Report Tab */}
-                {reportTab === "sales" && <SalesReportContent />}
+                {reportTab === "sales" && <SalesReportContent onNavigate={(tab, subTab) => {
+                  setActiveTab(tab);
+                  if (tab === "settings" && subTab) setSettingsTab(subTab);
+                }} />}
               </div>
             )}
 
@@ -811,6 +814,7 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
               setActiveTab(tab);
               if (tab === "settings" && subTab) setSettingsTab(subTab);
               if (tab === "reports") setReportTab("overview");
+              if (tab === "inventory" && subTab) setInvSearch(subTab);
             }} />}
 
             {/* ═══════ SALES ═══════ */}

@@ -81,6 +81,7 @@ export function LoginPage() {
       const role = await fetchRole(user.id);
 
       if (!role) {
+        console.error("No profile found for auth user.id:", user.id, "email:", user.email);
         setError(
           "Login succeeded but no profile was found for this account. Please contact an administrator."
         );

@@ -23,8 +23,8 @@ import {
 import * as db from "./db";
 import type { SalesReceiptWithCustomer } from "./db";
 
-const ALL_CUSTOMERS_LABEL = "\u101d\u101a\u103a\u101a\u1030\u101c\u1030\u1021\u102c\u1038\u101c\u102f\u1036\u1038";
-const ALL_CUSTOMERS_DROPDOWN_LABEL = "\u101d\u101a\u103a\u101a\u1030\u101c\u1030 \u1021\u102c\u1038\u101c\u102f\u1036\u1038";
+const ALL_CUSTOMERS_LABEL = "\u101d\u101a\u103a\u101a\u1030\u101e\u1030\u1021\u102c\u1038\u101c\u102f\u1036\u1038";
+const ALL_CUSTOMERS_DROPDOWN_LABEL = "\u101d\u101a\u103a\u101a\u1030\u101e\u1030 \u1021\u102c\u1038\u101c\u102f\u1036\u1038";
 
 const QUICK_RANGES = [
   { value: "Today", label: "\u101a\u1014\u1031\u1037" },
@@ -54,7 +54,7 @@ function formatNumber(n: number) {
   return n.toLocaleString("en-US");
 }
 
-export function SalesReportContent() {
+export function SalesReportContent({ onNavigate }: { onNavigate?: (tab: string, subTab?: string) => void }) {
   const [receipts, setReceipts] = useState<SalesReceiptWithCustomer[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -189,11 +189,11 @@ export function SalesReportContent() {
       {/* ── Summary Cards ── */}
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
         {[
-          { label: "စုစုပေါင်း ရောင်းရငွေ", sub: "totalAmount", value: `${formatNumber(stats.totalAmount)} Ks`, icon: ShoppingBag, color: "text-[#D6B25E]", bg: "bg-[#FAF6EC]" },
-          { label: "ဘောင်ချာ အရေအတွက်", sub: "receipts", value: stats.totalReceipts, icon: FileText, color: "text-blue-500", bg: "bg-blue-50" },
-          { label: "ဝယ်ယူသူ ဦးရေ", sub: "customers", value: stats.uniqueCustomers, icon: Users, color: "text-green-500", bg: "bg-green-50" },
+          { label: "စုစုပေါင်း ရောင်းရငွေ", sub: "totalAmount", value: `${formatNumber(stats.totalAmount)} Ks`, icon: ShoppingBag, color: "text-[#D6B25E]", bg: "bg-[#FAF6EC]", nav: "sales" as const },
+          { label: "ဘောင်ချာ အရေအတွက်", sub: "receipts", value: stats.totalReceipts, icon: FileText, color: "text-blue-500", bg: "bg-blue-50", nav: "sales" as const },
+          { label: "ဝယ်ယူသူ ဦးရေ", sub: "customers", value: stats.uniqueCustomers, icon: Users, color: "text-green-500", bg: "bg-green-50", nav: "sales" as const },
         ].map((card) => (
-          <div key={card.sub} className="bg-white rounded-[12px] border border-[#E5E7EB] shadow-[0_1px_2px_rgba(0,0,0,0.03)] p-4 sm:p-5">
+          <button key={card.sub} onClick={() => onNavigate?.("sales")} className="bg-white rounded-[12px] border border-[#E5E7EB] shadow-[0_1px_2px_rgba(0,0,0,0.03)] p-4 sm:p-5 text-left hover:border-[#D6B25E]/50 hover:shadow-[0_2px_8px_rgba(214,178,94,0.12)] transition-all cursor-pointer group">
             <div className="flex items-center gap-2 mb-2">
               <div className={`w-8 h-8 rounded-[10px] ${card.bg} flex items-center justify-center shrink-0`}>
                 <card.icon className={`w-4 h-4 ${card.color}`} />
@@ -201,7 +201,7 @@ export function SalesReportContent() {
             </div>
             <p className="text-[#1F2937] mt-1" style={{ fontSize: isMobile ? "1.25rem" : "1.5rem" }}>{card.value}</p>
             <p className="text-[#9CA3AF] mt-0.5 leading-tight" style={{ fontSize: "0.72rem" }}>{card.label}</p>
-          </div>
+          </button>
         ))}
       </div>
 

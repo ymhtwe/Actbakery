@@ -95,7 +95,7 @@ export function ProductionLogContent({ onNavigate }: { onNavigate?: (tab: string
 
   // Multi-select state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [bulkDeleteStep, setBulkDeleteStep] = useState<0 | 1 | 2>(0); // 0=hidden, 1=first confirm, 2=second confirm
+  const [bulkDeleteStep, setBulkDeleteStep] = useState<0 | 1>(0); // 0=hidden, 1=confirm
   const [bulkDeleting, setBulkDeleting] = useState(false);
 
   // Search suggestions
@@ -372,19 +372,7 @@ export function ProductionLogContent({ onNavigate }: { onNavigate?: (tab: string
   return (
     <div className="space-y-8">
       {/* ── Summary ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-        <button
-          onClick={() => tableRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
-          className="bg-white rounded-[12px] border border-[#E5E7EB] shadow-[0_1px_2px_rgba(0,0,0,0.03)] p-4 sm:p-5 text-left hover:border-[#D6B25E]/50 hover:shadow-[0_2px_8px_rgba(214,178,94,0.12)] transition-all cursor-pointer group"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[#1F2937] mt-1" style={{ fontSize: isMobile ? "1.25rem" : "1.5rem" }}>{filteredLogs.length}</p>
-              <p className="text-[#9CA3AF] mt-0.5 leading-tight" style={{ fontSize: "0.72rem" }}>ထုတ်လုပ်မှု မှတ်တမ်း</p>
-            </div>
-            <ChevronRight className="w-4 h-4 text-[#D1D5DB] group-hover:text-[#D6B25E] transition-colors" />
-          </div>
-        </button>
+      <div className="grid grid-cols-2 gap-3 sm:gap-4">
         <button
           onClick={() => onNavigate?.("reports")}
           className="bg-white rounded-[12px] border border-[#E5E7EB] shadow-[0_1px_2px_rgba(0,0,0,0.03)] p-4 sm:p-5 text-left hover:border-[#D6B25E]/50 hover:shadow-[0_2px_8px_rgba(214,178,94,0.12)] transition-all cursor-pointer group"
@@ -400,7 +388,10 @@ export function ProductionLogContent({ onNavigate }: { onNavigate?: (tab: string
           </div>
         </button>
         <button
-          onClick={() => onNavigate?.("settings", "items")}
+          onClick={() => {
+            const itemNames = [...new Set(filteredLogs.map((l) => l.item_name))];
+            onNavigate?.("inventory", itemNames.length === 1 ? itemNames[0] : "");
+          }}
           className="bg-white rounded-[12px] border border-[#E5E7EB] shadow-[0_1px_2px_rgba(0,0,0,0.03)] p-4 sm:p-5 text-left hover:border-[#D6B25E]/50 hover:shadow-[0_2px_8px_rgba(214,178,94,0.12)] transition-all cursor-pointer group"
         >
           <div className="flex items-center justify-between">
@@ -694,29 +685,6 @@ export function ProductionLogContent({ onNavigate }: { onNavigate?: (tab: string
                     <h3 className="text-[#1F2937]">ဖျက်ရန် အတည်ပြုပါ</h3>
                     <p className="text-[#9CA3AF]" style={{ fontSize: "0.8rem" }}>
                       {selectedRows.length} ခု ထုတ်လုပ်မှု မှတ်တမ်း ဖျက်မည်လား?
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 pt-2">
-                  <button onClick={() => setBulkDeleteStep(0)} className="flex-1 py-2.5 rounded-[10px] border border-[#E5E7EB] text-[#6B7280] hover:bg-[#F3F4F6] transition-all cursor-pointer" style={{ fontSize: "0.85rem" }}>
-                    မလုပ်တော့ပါ
-                  </button>
-                  <button onClick={() => setBulkDeleteStep(2)} className="flex-1 py-2.5 rounded-[10px] bg-[#DC2626] text-white hover:bg-[#B91C1C] transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2" style={{ fontSize: "0.85rem" }}>
-                    ဖျက်မည်
-                  </button>
-                </div>
-              </>
-            )}
-            {bulkDeleteStep === 2 && (
-              <>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center shrink-0">
-                    <AlertTriangle className="w-5 h-5 text-[#DC2626]" />
-                  </div>
-                  <div>
-                    <h3 className="text-[#1F2937]">ဖျက်ရန် အတည်ပြုပါ</h3>
-                    <p className="text-[#9CA3AF]" style={{ fontSize: "0.8rem" }}>
-                      သင်သတ်မှတ်ပါ။ အချက်အလက်များ ဖျက်မည်။ သင်သတ်မှတ်ပါ။
                     </p>
                   </div>
                 </div>

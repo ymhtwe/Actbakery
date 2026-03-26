@@ -21,8 +21,8 @@ import type { SalesReceiptWithCustomer, SalesReceiptLine } from "./db";
 import { ReceiptPrint } from "./ReceiptPrint";
 import type { ReceiptLineItem } from "./ReceiptPrint";
 
-const ALL_CUSTOMERS_LABEL = "\u101d\u101a\u103a\u101a\u1030\u101c\u1030\u1021\u102c\u1038\u101c\u102f\u1036\u1038";
-const ALL_CUSTOMERS_DROPDOWN_LABEL = "\u101d\u101a\u103a\u101a\u1030\u101c\u1030 \u1021\u102c\u1038\u101c\u102f\u1036\u1038";
+const ALL_CUSTOMERS_LABEL = "\u101d\u101a\u103a\u101a\u1030\u101e\u1030\u1021\u102c\u1038\u101c\u102f\u1036\u1038";
+const ALL_CUSTOMERS_DROPDOWN_LABEL = "\u101d\u101a\u103a\u101a\u1030\u101e\u1030 \u1021\u102c\u1038\u101c\u102f\u1036\u1038";
 
 const QUICK_RANGES = [
   { value: "Today", label: "\u101a\u1014\u1031\u1037" },
@@ -341,7 +341,7 @@ export function SalesContent() {
 
           {/* Customer dropdown */}
           <div className="flex flex-col gap-1.5 relative">
-            <label className="text-[#6B7280]" style={{ fontSize: "0.75rem" }}>{"\u101d\u101a\u103a\u101a\u1030\u101c\u1030"}</label>
+            <label className="text-[#6B7280]" style={{ fontSize: "0.75rem" }}>{"\u101d\u101a\u103a\u101a\u1030\u101e\u1030"}</label>
             <button onClick={() => setCustomerDropdownOpen(!customerDropdownOpen)} className="flex items-center justify-between gap-8 px-4 py-2 rounded-[10px] border border-[#E5E7EB] bg-white text-[#1F2937] hover:border-[#D6B25E]/50 transition-all cursor-pointer min-w-[160px]" style={{ fontSize: "0.85rem" }}>
               <span>{selectedCustomer}</span>
               <ChevronDown className="w-4 h-4 text-[#9CA3AF]" />
@@ -362,7 +362,7 @@ export function SalesContent() {
             <label className="text-[#6B7280]" style={{ fontSize: "0.75rem" }}>{"\u101b\u103e\u102c\u1016\u103d\u1031\u101b\u1014\u103a"}</label>
             <div className="relative">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#9CA3AF]" />
-              <input type="text" placeholder={"\u1018\u1031\u102c\u1004\u103a\u1001\u103b\u102c\u1021\u1019\u103e\u1010\u103a / \u101d\u101a\u103a\u101a\u1030\u101c\u1030 \u101b\u103e\u102c\u101b\u1014\u103a..."} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-9 pr-4 py-2 rounded-[10px] border border-[#E5E7EB] bg-white text-[#1F2937] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#D6B25E]/30 focus:border-[#D6B25E] transition-all" style={{ fontSize: "0.85rem" }} />
+              <input type="text" placeholder={"\u1018\u1031\u102c\u1004\u103a\u1001\u103b\u102c\u1021\u1019\u103e\u1010\u103a / \u101d\u101a\u103a\u101a\u1030\u101e\u1030 \u101b\u103e\u102c\u101b\u1014\u103a..."} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-9 pr-4 py-2 rounded-[10px] border border-[#E5E7EB] bg-white text-[#1F2937] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#D6B25E]/30 focus:border-[#D6B25E] transition-all" style={{ fontSize: "0.85rem" }} />
             </div>
           </div>
 
@@ -391,7 +391,7 @@ export function SalesContent() {
             </div>
           </div>
           <div className="flex flex-col gap-1.5 relative">
-            <label className="text-[#6B7280]" style={{ fontSize: "0.75rem" }}>{"\u101d\u101a\u103a\u101a\u1030\u101c\u1030"}</label>
+            <label className="text-[#6B7280]" style={{ fontSize: "0.75rem" }}>{"\u101d\u101a\u103a\u101a\u1030\u101e\u1030"}</label>
             <button onClick={() => setCustomerDropdownOpen(!customerDropdownOpen)} className="flex items-center justify-between px-4 py-2.5 rounded-[10px] border border-[#E5E7EB] bg-white text-[#1F2937] w-full cursor-pointer" style={{ fontSize: "0.85rem" }}>
               <span>{selectedCustomer}</span>
               <ChevronDown className="w-4 h-4 text-[#9CA3AF]" />
@@ -489,7 +489,7 @@ export function SalesContent() {
                     </th>
                     <th className="text-left py-3 px-4 text-[#6B7280]" style={{ fontSize: "0.8rem" }}>{"\u1018\u1031\u102c\u1004\u103a\u1001\u103b\u102c\u1021\u1019\u103e\u1010\u103a"}</th>
                     <th className="text-left py-3 px-4 text-[#6B7280]" style={{ fontSize: "0.8rem" }}>{"\u101b\u1000\u103a\u1005\u103d\u1032"}</th>
-                    <th className="text-left py-3 px-4 text-[#6B7280]" style={{ fontSize: "0.8rem" }}>{"\u101d\u101a\u103a\u101a\u1030\u101c\u1030"}</th>
+                    <th className="text-left py-3 px-4 text-[#6B7280]" style={{ fontSize: "0.8rem" }}>{"\u101d\u101a\u103a\u101a\u1030\u101e\u1030"}</th>
                     <th className="text-right py-3 px-4 text-[#6B7280]" style={{ fontSize: "0.8rem" }}>{"\u1005\u102f\u1005\u102f\u1015\u1031\u102b\u1004\u103a\u1038"}</th>
                     <th className="text-left py-3 px-4 text-[#6B7280]" style={{ fontSize: "0.8rem" }}>{"\u1019\u103e\u1010\u103a\u1001\u103b\u1000\u103a"}</th>
                     <th className="text-center py-3 px-2 text-[#6B7280]" style={{ fontSize: "0.8rem" }}>{"\u1000\u103c\u100a\u103a\u1037\u1019\u100a\u103a"}</th>
@@ -574,7 +574,7 @@ export function SalesContent() {
                   </div>
                   <div className="grid grid-cols-2 gap-2 mb-3">
                     <div>
-                      <p className="text-[#9CA3AF]" style={{ fontSize: "0.7rem" }}>{"\u101d\u101a\u103a\u101a\u1030\u101c\u1030"}</p>
+                      <p className="text-[#9CA3AF]" style={{ fontSize: "0.7rem" }}>{"\u101d\u101a\u103a\u101a\u1030\u101e\u1030"}</p>
                       <p className="text-[#6B7280]" style={{ fontSize: "0.85rem" }}>{r.customer_name}</p>
                     </div>
                     {r.note && (
@@ -624,7 +624,7 @@ export function SalesContent() {
                 <span className="text-[#1F2937]">{formatDate(detailReceipt.receipt_date || detailReceipt.created_at)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-[#6B7280]">{"\u101d\u101a\u103a\u101a\u1030\u101c\u1030"}</span>
+                <span className="text-[#6B7280]">{"\u101d\u101a\u103a\u101a\u1030\u101e\u1030"}</span>
                 <span className="text-[#1F2937]">{detailReceipt.customer_name}</span>
               </div>
               {detailReceipt.note && (
