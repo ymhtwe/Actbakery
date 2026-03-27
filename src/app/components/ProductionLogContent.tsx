@@ -570,6 +570,34 @@ export function ProductionLogContent({ onNavigate }: { onNavigate?: (tab: string
 
             {/* Mobile card list */}
             <div className="md:hidden space-y-3">
+              {/* Mobile select-all bar */}
+              <div className="flex items-center justify-between px-1 py-2">
+                <button
+                  onClick={toggleSelectAll}
+                  className="flex items-center gap-2 text-[#6B7280] hover:text-[#1F2937] transition-colors cursor-pointer"
+                  style={{ fontSize: "0.85rem" }}
+                >
+                  {isAllSelected ? (
+                    <CheckSquare className="w-[18px] h-[18px] text-[#D6B25E]" />
+                  ) : isSomeSelected ? (
+                    <MinusSquare className="w-[18px] h-[18px] text-[#D6B25E]" />
+                  ) : (
+                    <Square className="w-[18px] h-[18px] text-[#9CA3AF]" />
+                  )}
+                  {isAllSelected ? "အားလုံး ဖြုတ်ရန်" : "အားလုံး ရွေးရန်"}
+                </button>
+                {selectedIds.size > 0 && (
+                  <button
+                    onClick={() => setBulkDeleteStep(1)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] bg-[#DC2626] text-white hover:bg-[#B91C1C] transition-all cursor-pointer"
+                    style={{ fontSize: "0.8rem" }}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    {selectedIds.size} ခု ဖျက်ရန်
+                  </button>
+                )}
+              </div>
+
               {filteredLogs.map((l) => (
                 <div key={l.id} className={`border rounded-[12px] p-4 ${selectedIds.has(l.id) ? "border-[#D6B25E] bg-[#FAF6EC]/50" : "border-[#E5E7EB]"}`}>
                   <div className="flex items-start justify-between mb-2">

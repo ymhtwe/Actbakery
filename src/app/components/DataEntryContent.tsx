@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
 import {
   ScanBarcode,
   Plus,
@@ -75,6 +75,89 @@ function makeTempReceiptNo(dateStr: string) {
   return `BCH-${dateCode}-00000`;
 }
 
+const EntryItemRow = memo(({
+  item,
+  quantity,
+  price,
+  onUpdateQty,
+  onSetQty,
+}: {
+  item: CatalogItem;
+  quantity: number;
+  price: number;
+  onUpdateQty: (itemId: string, delta: number) => void;
+  onSetQty: (itemId: string, qty: number) => void;
+}) => {
+  const [editing, setEditing] = useState(false);
+  const [editValue, setEditValue] = useState("");
+
+  const startEdit = () => {
+    setEditValue(quantity === 0 ? "" : String(quantity));
+    setEditing(true);
+  };
+
+  const commitEdit = () => {
+    setEditing(false);
+    const parsed = parseInt(editValue, 10);
+    onSetQty(item.id, isNaN(parsed) || parsed < 0 ? 0 : parsed);
+  };
+
+  return (
+    <div className="flex items-center justify-between py-3 border-b border-[#E5E7EB]/60 last:border-b-0 px-1">
+      <div className="flex-1 min-w-0 mr-3">
+        <span className="text-[#1F2937] block truncate" style={{ fontSize: "0.9rem" }}>{item.name}</span>
+        {price > 0 && (
+          <span className="text-[#9CA3AF]" style={{ fontSize: "0.75rem" }}>{price.toLocaleString()} ကျပ်</span>
+        )}
+      </div>
+      <div className="flex items-center gap-1.5 shrink-0">
+        <button
+          onClick={() => onUpdateQty(item.id, -1)}
+          disabled={quantity === 0}
+          className={`w-8 h-8 rounded-full border flex items-center justify-center transition-colors active:scale-95 ${
+            quantity === 0
+              ? "border-[#E5E7EB] text-[#D1D5DB] cursor-default"
+              : "bg-white border-[#E5E7EB] text-[#6B7280] hover:bg-[#FAF6EC] hover:border-[#D6B25E]/40 cursor-pointer"
+          }`}
+        >
+          <Minus className="w-3.5 h-3.5" />
+        </button>
+        {editing ? (
+          <input
+            type="text"
+            inputMode="numeric"
+            autoFocus
+            value={editValue}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === "" || /^\d+$/.test(v)) setEditValue(v);
+            }}
+            onBlur={commitEdit}
+            onKeyDown={(e) => { if (e.key === "Enter") commitEdit(); }}
+            className="w-16 text-center rounded-[8px] border border-[#D6B25E] bg-[#FAF6EC] text-[#B8943C] font-semibold focus:outline-none focus:ring-2 focus:ring-[#D6B25E]/30 py-1"
+            style={{ fontSize: "0.95rem" }}
+          />
+        ) : (
+          <button
+            onClick={startEdit}
+            className={`w-12 text-center cursor-pointer rounded-[8px] py-1 transition-colors hover:bg-[#FAF6EC] ${quantity > 0 ? "text-[#B8943C] font-semibold" : "text-[#9CA3AF]"}`}
+            style={{ fontSize: "1rem" }}
+            title="နှိပ်၍ အရေအတွက် ရိုက်ထည့်ပါ"
+          >
+            {quantity}
+          </button>
+        )}
+        <button
+          onClick={() => onUpdateQty(item.id, 1)}
+          className="w-8 h-8 rounded-full bg-white border border-[#E5E7EB] flex items-center justify-center text-[#6B7280] hover:bg-[#FAF6EC] hover:border-[#D6B25E]/40 transition-colors cursor-pointer active:scale-95"
+        >
+          <Plus className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+});
+
 export function DataEntryContent({ role = "staff", onNavigate }: DataEntryProps) {
   const [activeMode, setActiveMode] = useState<"entry" | "sale">("entry");
   const [showStaffItemModal, setShowStaffItemModal] = useState(false);
@@ -92,12 +175,11 @@ export function DataEntryContent({ role = "staff", onNavigate }: DataEntryProps)
   // ═══════════════════════════════════
   const barcodeRef = useRef<HTMLInputElement>(null);
   const [barcodeInput, setBarcodeInput] = useState("");
-  const [entryItems, setEntryItems] = useState<EntryItem[]>([]);
-  const [manualItem, setManualItem] = useState("");
-  const [manualQtyStr, setManualQtyStr] = useState("1");
-  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [entryQuantities, setEntryQuantities] = useState<Record<string, number>>({});
+  const [entrySearch, setEntrySearch] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [showEntryConfirm, setShowEntryConfirm] = useState(false);
   const [productionDate, setProductionDate] = useState(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
@@ -105,7 +187,6 @@ export function DataEntryContent({ role = "staff", onNavigate }: DataEntryProps)
   const [entryDateModified, setEntryDateModified] = useState(false);
   const [showEntryDateConfirm, setShowEntryDateConfirm] = useState(false);
   const [pendingEntryAction, setPendingEntryAction] = useState<"add" | "submit" | null>(null);
-  const dropRef = useRef<HTMLDivElement>(null);
   const dateInputRef = useRef<HTMLInputElement>(null);
 
   // ═══════════════════════════════════
@@ -227,7 +308,6 @@ export function DataEntryContent({ role = "staff", onNavigate }: DataEntryProps)
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (dropRef.current && !dropRef.current.contains(e.target as Node)) setDropdownOpen(false);
       if (saleItemDropRef.current && !saleItemDropRef.current.contains(e.target as Node)) setSaleItemDropOpen(false);
       if (customerDropRef.current && !customerDropRef.current.contains(e.target as Node)) setCustomerDropOpen(false);
     };
@@ -239,7 +319,10 @@ export function DataEntryContent({ role = "staff", onNavigate }: DataEntryProps)
     if (!barcodeInput.trim()) return;
     const item = barcodeMap.current[barcodeInput.trim()];
     if (item) {
-      addOrMergeItem(item.name, 1);
+      setEntryQuantities(prev => ({
+        ...prev,
+        [item.id]: (prev[item.id] ?? 0) + 1,
+      }));
       setBarcodeInput("");
       barcodeRef.current?.focus();
     } else {
@@ -249,68 +332,69 @@ export function DataEntryContent({ role = "staff", onNavigate }: DataEntryProps)
     }
   };
 
-  const tryManualAdd = () => {
-    if (!manualItem) return;
-    if (!entryDateModified) {
-      setPendingEntryAction("add");
-      setShowEntryDateConfirm(true);
-      return;
-    }
-    doManualAdd();
-  };
-
-  const doManualAdd = () => {
-    if (!manualItem) return;
-    const qty = parseInt(manualQtyStr, 10);
-    if (isNaN(qty) || qty < 1) {
-      alert("Invalid quantity");
-      return;
-    }
-    addOrMergeItem(manualItem, qty);
-    setManualItem("");
-    setManualQtyStr("1");
-  };
-
-  const addOrMergeItem = (name: string, qty: number) => {
-    const catalogItem = catalogItems.find((c) => c.name === name);
-    const itemId = catalogItem?.id || "";
-    setEntryItems((prev) => {
-      const existing = prev.find((i) => i.name === name);
-      if (existing) {
-        return prev.map((i) => i.name === name ? { ...i, quantity: i.quantity + qty } : i);
+  const updateEntryQuantity = useCallback((itemId: string, delta: number) => {
+    setEntryQuantities(prev => {
+      const current = prev[itemId] ?? 0;
+      const newQty = Math.max(0, current + delta);
+      if (newQty === 0) {
+        const { [itemId]: _, ...rest } = prev;
+        return rest;
       }
-      return [...prev, { id: Date.now().toString(), itemId, name, quantity: qty }];
+      return { ...prev, [itemId]: newQty };
     });
-  };
+  }, []);
 
-  const updateQuantity = (id: string, delta: number) => {
-    setEntryItems((prev) =>
-      prev.map((item) => item.id === id ? { ...item, quantity: Math.max(1, item.quantity + delta) } : item)
-    );
-  };
+  const setEntryQuantity = useCallback((itemId: string, qty: number) => {
+    setEntryQuantities(prev => {
+      if (qty <= 0) {
+        const { [itemId]: _, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [itemId]: qty };
+    });
+  }, []);
 
-  const removeItem = (id: string) => {
-    setEntryItems((prev) => prev.filter((item) => item.id !== id));
-  };
+  const getItemPrice = useCallback((itemId: string) => {
+    const cat = catalogItems.find(c => c.id === itemId);
+    return cat?.default_price ?? stockData.find(s => s.id === itemId)?.defaultPrice ?? 0;
+  }, [catalogItems, stockData]);
 
-  const totalQuantity = entryItems.reduce((sum, i) => sum + i.quantity, 0);
+  const entrySelectedItems = useMemo(() =>
+    Object.entries(entryQuantities)
+      .filter(([, qty]) => qty > 0)
+      .map(([itemId, qty]) => {
+        const cat = catalogItems.find(c => c.id === itemId);
+        return { item_id: itemId, name: cat?.name ?? '', price: getItemPrice(itemId), quantity: qty };
+      }),
+    [entryQuantities, catalogItems, getItemPrice]
+  );
+
+  const totalQuantity = useMemo(() => entrySelectedItems.reduce((sum, i) => sum + i.quantity, 0), [entrySelectedItems]);
+  const totalPrice = useMemo(() => entrySelectedItems.reduce((sum, i) => sum + i.quantity * i.price, 0), [entrySelectedItems]);
+
+  const filteredCatalogItems = useMemo(() =>
+    entrySearch.trim()
+      ? catalogItems.filter(item => item.name.toLowerCase().includes(entrySearch.toLowerCase()))
+      : catalogItems,
+    [catalogItems, entrySearch]
+  );
 
   const trySubmit = () => {
-    if (entryItems.length === 0 || submitting) return;
+    if (entrySelectedItems.length === 0 || submitting) return;
     if (!entryDateModified) {
       setPendingEntryAction("submit");
       setShowEntryDateConfirm(true);
       return;
     }
-    doSubmit();
+    setShowEntryConfirm(true);
   };
 
   const doSubmit = async () => {
-    if (entryItems.length === 0 || submitting) return;
+    if (entrySelectedItems.length === 0 || submitting) return;
     setSubmitting(true);
     try {
-      const entries = entryItems.map((item) => ({
-        item_id: item.itemId,
+      const entries = entrySelectedItems.map((item) => ({
+        item_id: item.item_id,
         quantity: item.quantity,
       }));
       await db.createProductionLogs(entries, productionDate);
@@ -318,7 +402,7 @@ export function DataEntryContent({ role = "staff", onNavigate }: DataEntryProps)
       const newStock = await db.getStockWithToday();
       setStockData(newStock);
       setTimeout(() => {
-        setEntryItems([]);
+        setEntryQuantities({});
         setSubmitted(false);
       }, 1800);
     } catch (e: any) {
@@ -332,8 +416,7 @@ export function DataEntryContent({ role = "staff", onNavigate }: DataEntryProps)
   const handleEntryDateConfirm = () => {
     setShowEntryDateConfirm(false);
     setEntryDateModified(true);
-    if (pendingEntryAction === "add") doManualAdd();
-    else if (pendingEntryAction === "submit") doSubmit();
+    if (pendingEntryAction === "submit") setShowEntryConfirm(true);
     setPendingEntryAction(null);
   };
 
@@ -346,7 +429,8 @@ export function DataEntryContent({ role = "staff", onNavigate }: DataEntryProps)
   };
 
   const handleClearAll = () => {
-    setEntryItems([]);
+    setEntryQuantities({});
+    setEntrySearch("");
   };
 
   // ═══════════════════════════════════
@@ -667,145 +751,95 @@ export function DataEntryContent({ role = "staff", onNavigate }: DataEntryProps)
               </div>
             </div>
 
-            {/* ═══ Section 1: Manual Entry ═══ */}
+            {/* ═══ Section 1: Item Selection (POS-style) ═══ */}
             <div className="bg-white rounded-[12px] border border-[#E5E7EB] shadow-[0_1px_3px_rgba(0,0,0,0.04)] p-5 sm:p-7">
-              <h4 className="text-[#1F2937] mb-5">လက်ဖြင့် ထည့်သွင်းခြင်း</h4>
-
-              <div className="flex flex-col sm:flex-row gap-3">
-                <div className="flex-1 relative" ref={dropRef}>
-                  <label className="block text-[#6B7280] mb-1.5" style={{ fontSize: "0.75rem" }}>
-                    ပစ္စည်း ရွေးချယ်ရန်
-                  </label>
-                  <button
-                    onClick={() => setDropdownOpen(!dropdownOpen)}
-                    className="w-full flex items-center justify-between px-4 py-3 rounded-[12px] border border-[#E5E7EB] bg-white text-left hover:border-[#D6B25E]/50 transition-all cursor-pointer"
-                    style={{ fontSize: "0.9rem" }}
-                  >
-                    <span className={manualItem ? "text-[#1F2937]" : "text-[#9CA3AF]"}>
-                      {manualItem || "ပစ္စည်း ရွေးချယ်ပါ..."}
-                    </span>
-                    <ChevronDown className="w-4 h-4 text-[#9CA3AF] shrink-0" />
-                  </button>
-                  {dropdownOpen && (
-                    <div className="absolute top-full left-0 mt-1 w-full bg-white border border-[#E5E7EB] rounded-[12px] shadow-lg z-30 py-1 max-h-56 overflow-auto">
-                      {catalogItems.length === 0 ? (
-                        <div className="px-5 py-7 text-center">
-                          <Package className="w-9 h-9 text-[#D6B25E]/40 mx-auto mb-3" />
-                          <p className="text-[#1F2937] font-medium mb-1" style={{ fontSize: "0.9rem" }}>ပစ္စည်း မရှိသေးပါ</p>
-                          <p className="text-[#9CA3AF] mb-4" style={{ fontSize: "0.75rem" }}>Admin မှ ပစ္စည်းများ မထည့်သေးပါ။</p>
-                          <button
-                            onClick={() => {
-                              setDropdownOpen(false);
-                              if (role === "admin") {
-                                toast.info("Items settings သို့ ပြောင်းလဲနေသည်...");
-                                onNavigate?.("settings", "items");
-                              } else {
-                                setShowStaffItemModal(true);
-                              }
-                            }}
-                            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-[10px] bg-[#D6B25E] text-white hover:bg-[#C4A24D] transition-all cursor-pointer shadow-sm"
-                            style={{ fontSize: "0.8rem" }}
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                            ပစ္စည်းအသစ် ထည့်ရန်
-                          </button>
-                        </div>
-                      ) : (
-                        catalogItems.map((p) => (
-                          <button
-                            key={p.id}
-                            onClick={() => {
-                              setManualItem(p.name);
-                              setDropdownOpen(false);
-                            }}
-                            className={`w-full text-left px-4 py-2.5 hover:bg-[#FAF6EC] transition-colors cursor-pointer ${
-                              manualItem === p.name ? "text-[#B8943C] bg-[#FAF6EC]" : "text-[#1F2937]"
-                            }`}
-                            style={{ fontSize: "0.85rem" }}
-                          >
-                            {p.name}
-                          </button>
-                        ))
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                <div className="w-full sm:w-28">
-                  <label className="block text-[#6B7280] mb-1.5" style={{ fontSize: "0.75rem" }}>
-                    အရေအတွက်
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={manualQtyStr}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      if (v === "" || /^\d+$/.test(v)) setManualQtyStr(v);
-                    }}
-                    className="w-full px-4 py-3 rounded-[12px] border border-[#E5E7EB] bg-white text-[#1F2937] focus:outline-none focus:ring-2 focus:ring-[#D6B25E]/30 focus:border-[#D6B25E] transition-all text-center"
-                    style={{ fontSize: "0.9rem" }}
-                  />
-                </div>
-
-                <div className="flex items-end">
-                  <button
-                    onClick={tryManualAdd}
-                    disabled={!manualItem}
-                    className={`w-full sm:w-auto px-5 py-3 rounded-[12px] border transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                      manualItem
-                        ? "border-[#D6B25E] bg-[#FAF6EC] text-[#B8943C] hover:bg-[#D6B25E] hover:text-white"
-                        : "border-[#E5E7EB] bg-[#F7F6F3] text-[#9CA3AF] cursor-not-allowed"
-                    }`}
-                    style={{ fontSize: "0.85rem" }}
-                  >
-                    <Plus className="w-4 h-4" />
-                    စာရင်းထဲ ထည့်ရန်
-                  </button>
-                </div>
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="text-[#1F2937]" style={{ fontSize: "0.95rem" }}>ပစ္စည်း ရွေးချယ်ရန်</h4>
+                {entrySelectedItems.length > 0 && (
+                  <span className="px-2.5 py-1 rounded-full bg-[#D6B25E] text-white" style={{ fontSize: "0.7rem" }}>
+                    {entrySelectedItems.length} မျိုး ရွေးထား
+                  </span>
+                )}
               </div>
 
-              {/* Items list */}
-              {entryItems.length > 0 && (
-                <div className="mt-6 border-t border-[#E5E7EB] pt-5">
-                  <div className="flex items-center gap-2 mb-3">
-                    <Package className="w-4 h-4 text-[#9CA3AF]" />
-                    <span className="text-[#6B7280]" style={{ fontSize: "0.85rem" }}>
-                      ပစ္စည်းများ ({entryItems.length})
-                    </span>
-                  </div>
-                  <div className="space-y-0">
-                    {entryItems.map((item) => (
-                      <div key={item.id} className="flex items-center gap-3 py-3 border-b border-[#E5E7EB]/60 last:border-b-0">
-                        <span className="flex-1 text-[#1F2937] min-w-0 truncate" style={{ fontSize: "0.9rem" }}>
-                          {item.name}
-                        </span>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <button onClick={() => updateQuantity(item.id, -1)} className="w-8 h-8 rounded-full bg-white border border-[#E5E7EB] flex items-center justify-center text-[#6B7280] hover:bg-[#FAF6EC] hover:border-[#D6B25E]/40 transition-colors cursor-pointer active:scale-95">
-                            <Minus className="w-3.5 h-3.5" />
-                          </button>
-                          <span className="w-10 text-center text-[#1F2937]" style={{ fontSize: "1rem" }}>
-                            {item.quantity}
-                          </span>
-                          <button onClick={() => updateQuantity(item.id, 1)} className="w-8 h-8 rounded-full bg-white border border-[#E5E7EB] flex items-center justify-center text-[#6B7280] hover:bg-[#FAF6EC] hover:border-[#D6B25E]/40 transition-colors cursor-pointer active:scale-95">
-                            <Plus className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                        <button onClick={() => removeItem(item.id)} className="w-8 h-8 rounded-full flex items-center justify-center text-[#9CA3AF] hover:bg-red-50 hover:text-[#DC2626] transition-colors cursor-pointer shrink-0">
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
+              {/* Search */}
+              <div className="relative mb-4">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#9CA3AF] pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder="ပစ္စည်းအမည် ရှာရန်..."
+                  value={entrySearch}
+                  onChange={(e) => setEntrySearch(e.target.value)}
+                  className="w-full pl-9 pr-4 py-3 rounded-[12px] border border-[#E5E7EB] bg-white text-[#1F2937] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#D6B25E]/30 focus:border-[#D6B25E] transition-all"
+                  style={{ fontSize: "0.9rem" }}
+                />
+                {entrySearch && (
+                  <button
+                    onClick={() => setEntrySearch("")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9CA3AF] hover:text-[#1F2937] cursor-pointer transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+
+              {/* Scrollable item list */}
+              {catalogItems.length === 0 ? (
+                <div className="py-8 text-center">
+                  <Package className="w-9 h-9 text-[#D6B25E]/40 mx-auto mb-3" />
+                  <p className="text-[#1F2937] font-medium mb-1" style={{ fontSize: "0.9rem" }}>ပစ္စည်း မရှိသေးပါ</p>
+                  <p className="text-[#9CA3AF] mb-4" style={{ fontSize: "0.75rem" }}>Admin မှ ပစ္စည်းများ မထည့်သေးပါ။</p>
+                  <button
+                    onClick={() => {
+                      if (role === "admin") {
+                        toast.info("Items settings သို့ ပြောင်းလဲနေသည်...");
+                        onNavigate?.("settings", "items");
+                      } else {
+                        setShowStaffItemModal(true);
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-[10px] bg-[#D6B25E] text-white hover:bg-[#C4A24D] transition-all cursor-pointer shadow-sm"
+                    style={{ fontSize: "0.8rem" }}
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    ပစ္စည်းအသစ် ထည့်ရန်
+                  </button>
+                </div>
+              ) : (
+                <div className="max-h-[50vh] overflow-y-auto -mx-1 scrollbar-thin">
+                  {filteredCatalogItems.length === 0 ? (
+                    <div className="py-8 text-center">
+                      <Search className="w-8 h-8 mx-auto mb-2 text-[#E5E7EB]" />
+                      <p className="text-[#9CA3AF]" style={{ fontSize: "0.85rem" }}>
+                        &ldquo;{entrySearch}&rdquo; နှင့် ကိုက်ညီသော ပစ္စည်း မတွေ့ပါ
+                      </p>
+                    </div>
+                  ) : (
+                    filteredCatalogItems.map((item) => (
+                      <EntryItemRow
+                        key={item.id}
+                        item={item}
+                        quantity={entryQuantities[item.id] ?? 0}
+                        price={getItemPrice(item.id)}
+                        onUpdateQty={updateEntryQuantity}
+                        onSetQty={setEntryQuantity}
+                      />
+                    ))
+                  )}
                 </div>
               )}
 
-              {entryItems.length === 0 && (
-                <div className="mt-6 border-t border-[#E5E7EB] pt-8 pb-4 text-center">
-                  <Package className="w-10 h-10 mx-auto mb-2 text-[#E5E7EB]" />
-                  <p className="text-[#9CA3AF]" style={{ fontSize: "0.85rem" }}>
-                    ပစ္စည်း မရှိသေးပါ။ အပေါ်တွင် ပစ္စည်း ရွေးချယ်ပါ သို့မဟုတ် အောက်တွင် ဘားကုဒ် စကန်လုပ်ပါ။
-                  </p>
+              {/* Inline summary */}
+              {entrySelectedItems.length > 0 && (
+                <div className="mt-4 pt-4 border-t-2 border-[#D6B25E]/30 space-y-2">
+                  <div className="flex items-center justify-between px-2">
+                    <span className="text-[#6B7280]" style={{ fontSize: "0.85rem" }}>စုစုပေါင်းပစ္စည်းအရေအတွက်</span>
+                    <span className="text-[#1F2937]" style={{ fontSize: "0.9rem" }}>{totalQuantity} ခု</span>
+                  </div>
+                  <div className="flex items-center justify-between px-2 py-2 rounded-[10px] bg-[#FAF6EC]">
+                    <span className="text-[#B8943C] font-medium" style={{ fontSize: "0.95rem" }}>စုစုပေါင်းတန်ဖိုး</span>
+                    <span className="text-[#B8943C] font-bold" style={{ fontSize: "1.15rem" }}>{totalPrice.toLocaleString()} ကျပ်</span>
+                  </div>
                 </div>
               )}
             </div>
@@ -1404,7 +1438,7 @@ export function DataEntryContent({ role = "staff", onNavigate }: DataEntryProps)
       </div>
 
       {/* ═══ Bottom Sticky Panel (Entry tab only) ═══ */}
-      {activeMode === "entry" && entryItems.length > 0 && (
+      {activeMode === "entry" && entrySelectedItems.length > 0 && (
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-[#E5E7EB] shadow-[0_-4px_12px_rgba(0,0,0,0.06)] z-20">
           <div className="max-w-2xl mx-auto px-4 sm:px-6 py-4 flex flex-col sm:flex-row items-center gap-3">
             <div className="flex items-center gap-3 w-full sm:w-auto">
@@ -1415,7 +1449,10 @@ export function DataEntryContent({ role = "staff", onNavigate }: DataEntryProps)
               </div>
               <div className="flex flex-col">
                 <span className="text-[#9CA3AF]" style={{ fontSize: "0.75rem" }}>
-                  ပစ္စည်း {entryItems.length} မျိုး
+                  ပစ္စည်း {entrySelectedItems.length} မျိုး
+                </span>
+                <span className="text-[#B8943C] font-medium" style={{ fontSize: "0.8rem" }}>
+                  {totalPrice.toLocaleString()} ကျပ်
                 </span>
                 <span className="text-[#9CA3AF] flex items-center gap-1" style={{ fontSize: "0.7rem" }}>
                   <CalendarDays className="w-3 h-3" />
@@ -1554,6 +1591,80 @@ export function DataEntryContent({ role = "staff", onNavigate }: DataEntryProps)
               >
                 <CalendarDays className="w-4 h-4" />
                 ရက်စွဲ ပြောင်းလဲမည်
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ Entry Confirmation Modal ═══ */}
+      {showEntryConfirm && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 px-4" onClick={() => setShowEntryConfirm(false)}>
+          <div className="bg-white rounded-[16px] border border-[#E5E7EB] shadow-2xl w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-5">
+              <div className="w-10 h-10 rounded-full bg-[#FAF6EC] flex items-center justify-center shrink-0">
+                <Package className="w-5 h-5 text-[#D6B25E]" />
+              </div>
+              <div>
+                <h3 className="text-[#1F2937]" style={{ fontSize: "1rem" }}>မှတ်တမ်းတင်ရန် အတည်ပြုပါ</h3>
+                <p className="text-[#9CA3AF]" style={{ fontSize: "0.8rem" }}>
+                  ပစ္စည်းများ မှန်ကန်ကြောင်း စစ်ဆေးပါ
+                </p>
+              </div>
+            </div>
+
+            {/* Date */}
+            <div className="bg-[#FAFAF8] rounded-[10px] border border-[#E5E7EB] px-4 py-2.5 mb-4 flex items-center gap-2">
+              <CalendarDays className="w-4 h-4 text-[#D6B25E] shrink-0" />
+              <span className="text-[#1F2937]" style={{ fontSize: "0.85rem" }}>{formatDisplayDate(productionDate)}</span>
+            </div>
+
+            {/* Item list */}
+            <div className="max-h-[40vh] overflow-y-auto mb-4 border border-[#E5E7EB] rounded-[12px] divide-y divide-[#E5E7EB]">
+              {entrySelectedItems.map((item) => (
+                <div key={item.item_id} className="flex items-center justify-between px-4 py-3">
+                  <span className="text-[#1F2937] truncate flex-1 min-w-0 mr-3" style={{ fontSize: "0.9rem" }}>{item.name}</span>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span className="text-[#B8943C] font-semibold" style={{ fontSize: "0.95rem" }}>{item.quantity.toLocaleString()}</span>
+                    <span className="text-[#9CA3AF]" style={{ fontSize: "0.75rem" }}>ခု</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Summary */}
+            <div className="bg-[#FAF6EC] rounded-[10px] px-4 py-3 mb-5 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[#6B7280]" style={{ fontSize: "0.85rem" }}>စုစုပေါင်း ပစ္စည်းအမျိုးအစား</span>
+                <span className="text-[#1F2937]" style={{ fontSize: "0.9rem" }}>{entrySelectedItems.length} မျိုး</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-[#6B7280]" style={{ fontSize: "0.85rem" }}>စုစုပေါင်း အရေအတွက်</span>
+                <span className="text-[#B8943C] font-bold" style={{ fontSize: "1.1rem" }}>{totalQuantity.toLocaleString()} ခု</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-[#6B7280]" style={{ fontSize: "0.85rem" }}>စုစုပေါင်း တန်ဖိုး</span>
+                <span className="text-[#B8943C] font-bold" style={{ fontSize: "1.1rem" }}>{totalPrice.toLocaleString()} ကျပ်</span>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex flex-col gap-2.5">
+              <button
+                onClick={() => { setShowEntryConfirm(false); doSubmit(); }}
+                disabled={submitting}
+                className="w-full py-3 rounded-[12px] bg-[#D6B25E] text-white hover:bg-[#B8943C] transition-all cursor-pointer flex items-center justify-center gap-2"
+                style={{ fontSize: "0.9rem" }}
+              >
+                {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                {submitting ? "လုပ်ဆောင်နေသည်..." : "အတည်ပြုမည်"}
+              </button>
+              <button
+                onClick={() => setShowEntryConfirm(false)}
+                className="w-full py-3 rounded-[12px] border border-[#E5E7EB] text-[#6B7280] hover:bg-[#FAF6EC] hover:text-[#1F2937] transition-all cursor-pointer flex items-center justify-center gap-2"
+                style={{ fontSize: "0.9rem" }}
+              >
+                ပြန်ပြင်မည်
               </button>
             </div>
           </div>
