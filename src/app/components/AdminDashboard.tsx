@@ -40,6 +40,7 @@ import { SalesContent } from "./SalesContent";
 import { ProductionLogContent } from "./ProductionLogContent";
 import { CustomerManagement } from "./CustomerManagement";
 import { SalesReportContent } from "./SalesReportContent";
+import { ItemDetailContent } from "./ItemDetailContent";
 
 // ── Sidebar items ──
 const sidebarItems = [
@@ -139,6 +140,13 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
 
   // Reports tab state
   const [reportTab, setReportTab] = useState("overview");
+
+  // Item detail state (for clickable dashboard cards)
+  const [selectedItemDetail, setSelectedItemDetail] = useState<{ id: string; name: string } | null>(null);
+
+  // Pending search for cross-tab navigation
+  const [pendingProdSearch, setPendingProdSearch] = useState("");
+  const [pendingSalesSearch, setPendingSalesSearch] = useState("");
 
   // Settings sub-tab state
   const [settingsTab, setSettingsTab] = useState("items");
@@ -449,7 +457,7 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
           {sidebarItems.filter((item) => role === "admin" || staffVisibleTabs.has(item.id)).map((item) => (
             <button
               key={item.id}
-              onClick={() => { setActiveTab(item.id); setSidebarOpen(false); }}
+              onClick={() => { setActiveTab(item.id); setSidebarOpen(false); setSelectedItemDetail(null); setPendingProdSearch(""); setPendingSalesSearch(""); }}
               className={`flex items-center gap-3 px-4 py-3 rounded-[12px] transition-all cursor-pointer w-full text-left ${
                 activeTab === item.id
                   ? "bg-[#FAF6EC] text-[#B8943C] border border-[#D6B25E]/30"
@@ -520,7 +528,7 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
           <div className="max-w-[1200px] mx-auto px-4 sm:px-6 py-4 sm:py-6 min-w-0 w-full box-border">
 
             {/* ═══════ DASHBOARD ═══════ */}
-            {activeTab === "dashboard" && (
+            {activeTab === "dashboard" && !selectedItemDetail && (
               <div className="space-y-10">
                 {/* Today Snapshot */}
                 <div>
@@ -532,7 +540,7 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
                     {products.map((product) => {
                       const sc = statusConfig[product.status];
                       return (
-                        <div key={product.id} className="bg-white rounded-[12px] border border-[#E5E7EB] shadow-[0_1px_2px_rgba(0,0,0,0.03)] p-5 flex flex-col gap-3">
+                        <div key={product.id} onClick={() => setSelectedItemDetail({ id: product.id, name: product.name })} className="bg-white rounded-[12px] border border-[#E5E7EB] shadow-[0_1px_2px_rgba(0,0,0,0.03)] p-5 flex flex-col gap-3 cursor-pointer hover:border-[#D6B25E]/50 hover:shadow-[0_2px_8px_rgba(214,178,94,0.12)] transition-all">
                           <div className="flex items-center justify-between">
                             <span className="text-[#1F2937]" style={{ fontSize: "1.05rem" }}>{product.name}</span>
                             <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border ${sc.bg} ${sc.text} ${sc.border}`} style={{ fontSize: "0.7rem" }}>
@@ -588,6 +596,22 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
 
 
               </div>
+            )}
+
+            {/* ═══════ ITEM DETAIL ═══════ */}
+            {activeTab === "dashboard" && selectedItemDetail && (
+              <ItemDetailContent
+                itemId={selectedItemDetail.id}
+                itemName={selectedItemDetail.name}
+                currentStock={products.find(p => p.id === selectedItemDetail.id)?.currentStock ?? 0}
+                onBack={() => setSelectedItemDetail(null)}
+                onNavigate={(tab, search) => {
+                  setSelectedItemDetail(null);
+                  if (tab === "production_log") setPendingProdSearch(search || "");
+                  if (tab === "sales") setPendingSalesSearch(search || "");
+                  setActiveTab(tab);
+                }}
+              />
             )}
 
             {/* ═══════ REPORTS ═══════ */}
@@ -810,7 +834,7 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
             )}
 
             {/* ═══════ PRODUCTION LOG ═══════ */}
-            {activeTab === "production_log" && <ProductionLogContent onNavigate={(tab, subTab) => {
+            {activeTab === "production_log" && <ProductionLogContent initialSearchTerm={pendingProdSearch} onNavigate={(tab, subTab) => {
               setActiveTab(tab);
               if (tab === "settings" && subTab) setSettingsTab(subTab);
               if (tab === "reports") setReportTab("overview");
@@ -818,7 +842,7 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
             }} />}
 
             {/* ═══════ SALES ═══════ */}
-            {activeTab === "sales" && <SalesContent />}
+            {activeTab === "sales" && <SalesContent initialSearchTerm={pendingSalesSearch} />}
 
             {/* ═══════ INVENTORY ═══════ */}
             {activeTab === "inventory" && (

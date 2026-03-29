@@ -83,10 +83,10 @@ function formatNumber(n: number) {
   return n.toLocaleString("en-US");
 }
 
-export function SalesContent() {
+export function SalesContent({ initialSearchTerm }: { initialSearchTerm?: string } = {}) {
   const [receipts, setReceipts] = useState<SalesReceiptWithCustomer[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [searchTerm, setSearchTerm] = useState(initialSearchTerm || "");
 
   // Filter state
   const defaults = getDefaultDates("All");

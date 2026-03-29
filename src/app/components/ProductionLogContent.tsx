@@ -69,10 +69,10 @@ function formatDate(iso: string) {
   });
 }
 
-export function ProductionLogContent({ onNavigate }: { onNavigate?: (tab: string, subTab?: string) => void }) {
+export function ProductionLogContent({ onNavigate, initialSearchTerm }: { onNavigate?: (tab: string, subTab?: string) => void; initialSearchTerm?: string }) {
   const [logs, setLogs] = useState<ProdRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [searchTerm, setSearchTerm] = useState(initialSearchTerm || "");
 
   // Filter state
   const defaults = getDefaultDates("All");
