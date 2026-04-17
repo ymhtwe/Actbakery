@@ -42,6 +42,7 @@ export interface ReceiptHeaderInsert {
   subtotal: number;
   discount_amount: number;
   grand_total: number;
+  paid_amount?: number;
   note: string | null;
   created_by: string | null;
   status: 'posted' | 'draft' | 'cancelled';
@@ -64,6 +65,7 @@ export interface SalesReceipt {
   subtotal: number;
   discount_amount: number;
   grand_total: number;
+  paid_amount: number;
   note: string | null;
   created_by: string | null;
   status: string;
@@ -512,7 +514,9 @@ export async function getSalesReceiptLines(receiptId: string): Promise<SalesRece
  * Delete a sales receipt and its lines (lines have FK cascade, but delete lines first to be safe).
  */
 export async function deleteSalesReceipt(id: string): Promise<void> {
-  // Delete lines first
+  // Delete payments first
+  await supabase.from("receipt_payments").delete().eq("receipt_id", id);
+  // Delete lines
   await supabase.from("sales_receipt_lines").delete().eq("receipt_id", id);
   const { data, error } = await supabase
     .from("sales_receipts")
@@ -522,6 +526,222 @@ export async function deleteSalesReceipt(id: string): Promise<void> {
   if (error) throw new Error(`Failed to delete receipt: ${error.message}`);
   if (!data || data.length === 0) {
     throw new Error("Delete blocked: RLS policy may not allow this operation.");
+  }
+}
+
+/**
+ * Update a sales receipt header and replace its lines.
+ */
+export async function updateSalesReceipt(
+  receiptId: string,
+  header: Partial<Pick<ReceiptHeaderInsert, "customer_id" | "receipt_date" | "subtotal" | "discount_amount" | "grand_total" | "note" | "status" | "paid_amount">>,
+  lines: Omit<ReceiptLineInsert, "receipt_id">[],
+): Promise<void> {
+  // Update header
+  const { error: hErr } = await supabase
+    .from("sales_receipts")
+    .update(header)
+    .eq("id", receiptId);
+  if (hErr) throw new Error(`ဘောင်ချာ ပြင်ဆင် မအောင်မြင်ပါ: ${hErr.message}`);
+
+  // Delete old lines
+  await supabase.from("sales_receipt_lines").delete().eq("receipt_id", receiptId);
+
+  // Insert new lines
+  if (lines.length > 0) {
+    const lineRows = lines.map((l) => ({
+      receipt_id: receiptId,
+      item_id: l.item_id,
+      item_name_snapshot: l.item_name_snapshot,
+      qty: l.qty,
+      unit_price: l.unit_price,
+      line_total: l.line_total,
+    }));
+    const { error: lErr } = await supabase
+      .from("sales_receipt_lines")
+      .insert(lineRows);
+    if (lErr) throw new Error(`ဘောင်ချာ အသေးစိတ် ပြင်ဆင် မအောင်မြင်ပါ: ${lErr.message}`);
+  }
+}
+
+// ════════════════════════════════════
+//  RECEIPT PAYMENTS
+// ════════════════════════════════════
+
+export interface ReceiptPayment {
+  id: string;
+  receipt_id: string;
+  amount: number;
+  payment_date: string;
+  note: string | null;
+  created_at: string;
+}
+
+/**
+ * Update the paid_amount on a receipt header.
+ */
+export async function updateReceiptPaidAmount(receiptId: string, paidAmount: number): Promise<void> {
+  const { error } = await supabase
+    .from("sales_receipts")
+    .update({ paid_amount: paidAmount })
+    .eq("id", receiptId);
+  if (error) throw new Error(`ပေးငွေ သိမ်းဆည်း မအောင်မြင်ပါ: ${error.message}`);
+}
+
+/**
+ * Add a payment record and update paid_amount on the receipt.
+ */
+export async function addReceiptPayment(
+  receiptId: string,
+  amount: number,
+  paymentDate: string,
+  note?: string,
+): Promise<ReceiptPayment> {
+  // Insert payment record
+  const { data: payment, error: pErr } = await supabase
+    .from("receipt_payments")
+    .insert({ receipt_id: receiptId, amount, payment_date: paymentDate, note: note || null })
+    .select()
+    .single();
+  if (pErr) throw new Error(`ပေးချေမှု မှတ်တမ်း မအောင်မြင်ပါ: ${pErr.message}`);
+
+  // Recalculate total paid from all payments
+  const { data: payments, error: sErr } = await supabase
+    .from("receipt_payments")
+    .select("amount")
+    .eq("receipt_id", receiptId);
+  if (!sErr && payments) {
+    const totalPaid = payments.reduce((s: number, p: any) => s + (p.amount || 0), 0);
+    await supabase.from("sales_receipts").update({ paid_amount: totalPaid }).eq("id", receiptId);
+  }
+
+  return payment as ReceiptPayment;
+}
+
+/**
+ * Get all payment records for a receipt.
+ */
+export async function getReceiptPayments(receiptId: string): Promise<ReceiptPayment[]> {
+  const { data, error } = await supabase
+    .from("receipt_payments")
+    .select("*")
+    .eq("receipt_id", receiptId)
+    .order("payment_date", { ascending: true });
+  if (error) throw new Error(`Failed to load payments: ${error.message}`);
+  return data || [];
+}
+
+/**
+ * Delete a payment record and recalculate paid_amount.
+ */
+export async function deleteReceiptPayment(paymentId: string, receiptId: string): Promise<void> {
+  await supabase.from("receipt_payments").delete().eq("id", paymentId);
+  const { data: payments } = await supabase
+    .from("receipt_payments")
+    .select("amount")
+    .eq("receipt_id", receiptId);
+  const totalPaid = (payments || []).reduce((s: number, p: any) => s + (p.amount || 0), 0);
+  await supabase.from("sales_receipts").update({ paid_amount: totalPaid }).eq("id", receiptId);
+}
+
+/**
+ * Get all receipts that still have outstanding balance (grand_total > paid_amount).
+ */
+export async function getReceiptsWithDebt(): Promise<SalesReceiptWithCustomer[]> {
+  const { data, error } = await supabase
+    .from("sales_receipts")
+    .select("*, customers(name)")
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(`Failed to load receipts: ${error.message}`);
+  return (data || [])
+    .filter((r: any) => r.grand_total > (r.paid_amount || 0))
+    .map((r: any) => ({
+      ...r,
+      customer_name: r.customers?.name || "Walk-in",
+    }));
+}
+
+/**
+ * Fetch all receipt payment records with receipt + customer info.
+ */
+export interface ReceiptPaymentWithInfo extends ReceiptPayment {
+  receipt_no: string;
+  customer_name: string;
+  grand_total: number;
+  receipt_paid_amount: number;
+}
+
+export const INITIAL_PAYMENT_NOTE = "ရောင်းချစဉ် ပေးငွေ";
+
+export async function getAllReceiptPayments(): Promise<ReceiptPaymentWithInfo[]> {
+  const { data, error } = await supabase
+    .from("receipt_payments")
+    .select("*, sales_receipts(receipt_no, grand_total, paid_amount, customer_id, customers(name))")
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(`Failed to load payment records: ${error.message}`);
+  // Filter out orphan payments (receipt was deleted) and initial sale payments
+  return (data || [])
+    .filter((p: any) => p.sales_receipts !== null && p.note !== INITIAL_PAYMENT_NOTE)
+    .map((p: any) => ({
+      ...p,
+      receipt_no: p.sales_receipts?.receipt_no || "",
+      customer_name: p.sales_receipts?.customers?.name || "Walk-in",
+      grand_total: p.sales_receipts?.grand_total || 0,
+      receipt_paid_amount: p.sales_receipts?.paid_amount || 0,
+    }));
+}
+
+/**
+ * Delete a payment log entry and recalculate receipt paid_amount.
+ */
+export async function deletePaymentLog(paymentId: string, receiptId: string): Promise<void> {
+  await supabase.from("receipt_payments").delete().eq("id", paymentId);
+  // Recalculate
+  const { data: payments } = await supabase
+    .from("receipt_payments")
+    .select("amount")
+    .eq("receipt_id", receiptId);
+  const totalPaid = (payments || []).reduce((s: number, p: any) => s + (p.amount || 0), 0);
+  await supabase.from("sales_receipts").update({ paid_amount: totalPaid }).eq("id", receiptId);
+}
+
+/**
+ * Update a payment log entry (amount and/or note) and recalculate receipt paid_amount.
+ */
+export async function updatePaymentLog(
+  paymentId: string,
+  receiptId: string,
+  updates: { amount?: number; note?: string },
+): Promise<void> {
+  const { error } = await supabase
+    .from("receipt_payments")
+    .update(updates)
+    .eq("id", paymentId);
+  if (error) throw new Error(`Failed to update payment: ${error.message}`);
+  // Recalculate
+  const { data: payments } = await supabase
+    .from("receipt_payments")
+    .select("amount")
+    .eq("receipt_id", receiptId);
+  const totalPaid = (payments || []).reduce((s: number, p: any) => s + (p.amount || 0), 0);
+  await supabase.from("sales_receipts").update({ paid_amount: totalPaid }).eq("id", receiptId);
+}
+
+/**
+ * Bulk delete payment logs and recalculate affected receipt paid_amounts.
+ */
+export async function bulkDeletePaymentLogs(payments: { id: string; receipt_id: string }[]): Promise<void> {
+  const ids = payments.map((p) => p.id);
+  await supabase.from("receipt_payments").delete().in("id", ids);
+  // Recalculate each affected receipt
+  const receiptIds = [...new Set(payments.map((p) => p.receipt_id))];
+  for (const rid of receiptIds) {
+    const { data: remaining } = await supabase
+      .from("receipt_payments")
+      .select("amount")
+      .eq("receipt_id", rid);
+    const totalPaid = (remaining || []).reduce((s: number, p: any) => s + (p.amount || 0), 0);
+    await supabase.from("sales_receipts").update({ paid_amount: totalPaid }).eq("id", rid);
   }
 }
 

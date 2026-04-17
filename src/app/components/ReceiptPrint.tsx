@@ -13,12 +13,16 @@ interface ReceiptPrintProps {
   date: string;
   receiptNo?: string;
   items: ReceiptLineItem[];
+  subtotal?: number;
+  discountAmount?: number;
+  paidAmount?: number;
+  balanceDue?: number;
   grandTotal: number;
   shopName?: string;
 }
 
 export const ReceiptPrint = forwardRef<HTMLDivElement, ReceiptPrintProps>(
-  ({ customerName, date, receiptNo, items, grandTotal, shopName = "ACT Bakery" }, ref) => {
+  ({ customerName, date, receiptNo, items, subtotal, discountAmount, paidAmount, balanceDue, grandTotal, shopName = "ACT Bakery" }, ref) => {
     const formatDate = (dateStr: string) => {
       const d = new Date(dateStr + "T00:00:00");
       if (isNaN(d.getTime())) return dateStr;
@@ -66,7 +70,7 @@ export const ReceiptPrint = forwardRef<HTMLDivElement, ReceiptPrintProps>(
             <thead>
               <tr>
                 <th className="receipt-th receipt-th-name">ပစ္စည်း</th>
-                <th className="receipt-th receipt-th-qty">ခု</th>
+                <th className="receipt-th receipt-th-qty">အရေအတွက်</th>
                 <th className="receipt-th receipt-th-price">ဈေး</th>
                 <th className="receipt-th receipt-th-total">ပေါင်း</th>
               </tr>
@@ -87,10 +91,36 @@ export const ReceiptPrint = forwardRef<HTMLDivElement, ReceiptPrintProps>(
 
           {/* Footer */}
           <div className="receipt-footer">
+            {subtotal != null && discountAmount != null && discountAmount > 0 && (
+              <>
+                <div className="receipt-subtotal-row" style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
+                  <span>စုစုပေါင်းငွေ</span>
+                  <span>{formatNumber(subtotal)} ကျပ်</span>
+                </div>
+                <div className="receipt-discount-row" style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
+                  <span>လျှော့စျေး</span>
+                  <span>-{formatNumber(discountAmount)} ကျပ်</span>
+                </div>
+              </>
+            )}
             <div className="receipt-grand-total">
               <span className="receipt-grand-total-label">စုစုပေါင်း</span>
               <span className="receipt-grand-total-value">{formatNumber(grandTotal)} ကျပ်</span>
             </div>
+            {paidAmount != null && paidAmount > 0 && (
+              <>
+                <div style={{ display: "flex", justifyContent: "space-between", marginTop: "2px" }}>
+                  <span>ပေးငွေ</span>
+                  <span>{formatNumber(paidAmount)} ကျပ်</span>
+                </div>
+                {balanceDue != null && balanceDue > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: "2px", fontWeight: 700 }}>
+                    <span>ကျန်ငွေ</span>
+                    <span>{formatNumber(balanceDue)} ကျပ်</span>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </div>
       </div>

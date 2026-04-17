@@ -1,4 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+// ...existing code...
+
 import {
   Search,
   Loader2,
@@ -14,10 +16,13 @@ import {
   AlertTriangle,
   Eye,
   Printer,
+  Pencil,
+  Plus,
+  Minus,
 } from "lucide-react";
 
 import * as db from "./db";
-import type { SalesReceiptWithCustomer, SalesReceiptLine } from "./db";
+import type { SalesReceiptWithCustomer, SalesReceiptLine, Item } from "./db";
 import { ReceiptPrint } from "./ReceiptPrint";
 import type { ReceiptLineItem } from "./ReceiptPrint";
 
@@ -115,6 +120,18 @@ export function SalesContent({ initialSearchTerm }: { initialSearchTerm?: string
   const [bulkDeleteStep, setBulkDeleteStep] = useState<0 | 1 | 2>(0);
   const [bulkDeleting, setBulkDeleting] = useState(false);
 
+  // Edit modal state
+  const [editReceipt, setEditReceipt] = useState<SalesReceiptWithCustomer | null>(null);
+  const [editLines, setEditLines] = useState<{ item_id: string; item_name: string; qty: number; unit_price: number }[]>([]);
+  const [editCustomerId, setEditCustomerId] = useState("");
+  const [editDate, setEditDate] = useState("");
+  const [editNote, setEditNote] = useState("");
+  const [editDiscount, setEditDiscount] = useState("");
+  const [editPaidStr, setEditPaidStr] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+  const [editLoading, setEditLoading] = useState(false);
+  const [allItems, setAllItems] = useState<Item[]>([]);
+
   // Customers for filter dropdown
   const [allCustomers, setAllCustomers] = useState<{ id: string; name: string }[]>([]);
 
@@ -130,12 +147,14 @@ export function SalesContent({ initialSearchTerm }: { initialSearchTerm?: string
   const loadReceipts = useCallback(async () => {
     try {
       setLoading(true);
-      const [data, customers] = await Promise.all([
+      const [data, customers, items] = await Promise.all([
         db.getSalesReceipts(),
         db.getCustomers(),
+        db.getItems(),
       ]);
       setReceipts(data);
       setAllCustomers(customers.map((c) => ({ id: c.id, name: c.name })));
+      setAllItems(items.filter((i) => i.is_active));
     } catch (e) {
       console.error("Failed to load receipts:", e);
     } finally {
@@ -272,6 +291,108 @@ export function SalesContent({ initialSearchTerm }: { initialSearchTerm?: string
     }
   };
 
+  // ── Edit handlers ──
+  const openEdit = async (r: SalesReceiptWithCustomer) => {
+    setEditReceipt(r);
+    setEditDate(r.receipt_date || r.created_at.substring(0, 10));
+    setEditNote(r.note || "");
+    setEditDiscount(r.discount_amount ? String(r.discount_amount) : "");
+    setEditPaidStr(r.paid_amount ? String(r.paid_amount) : "");
+    // Find customer id from name
+    const cust = allCustomers.find((c) => c.name === r.customer_name);
+    setEditCustomerId(cust?.id || "");
+    setEditLoading(true);
+    try {
+      const lines = await db.getSalesReceiptLines(r.id);
+      setEditLines(
+        lines.map((l) => ({
+          item_id: l.item_id,
+          item_name: l.item_name_snapshot,
+          qty: l.qty,
+          unit_price: l.unit_price,
+        })),
+      );
+    } catch {
+      setEditLines([]);
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  const editSubtotal = editLines.reduce((s, l) => s + l.qty * l.unit_price, 0);
+  const editDiscountNum = parseInt(editDiscount) || 0;
+  const editGrandTotal = Math.max(0, editSubtotal - editDiscountNum);
+  const editPaidNum = parseInt(editPaidStr) || 0;
+
+  const handleEditSave = async () => {
+    if (!editReceipt) return;
+    if (editLines.filter((l) => l.qty > 0).length === 0) {
+      alert("ပစ္စည်းအနည်းဆုံး ၁ ခု ထည့်ပါ");
+      return;
+    }
+    setEditSaving(true);
+    try {
+      const activeLines = editLines.filter((l) => l.qty > 0);
+      await db.updateSalesReceipt(
+        editReceipt.id,
+        {
+          customer_id: editCustomerId || undefined,
+          receipt_date: editDate,
+          subtotal: editSubtotal,
+          discount_amount: editDiscountNum,
+          grand_total: editGrandTotal,
+          note: editNote || undefined,
+          paid_amount: editPaidNum,
+        },
+        activeLines.map((l) => ({
+          item_id: l.item_id,
+          item_name_snapshot: l.item_name,
+          qty: l.qty,
+          unit_price: l.unit_price,
+          line_total: l.qty * l.unit_price,
+        })),
+      );
+      setEditReceipt(null);
+      await loadReceipts();
+    } catch (e: any) {
+      console.error("Failed to update receipt:", e);
+      alert(e?.message || "ပြင်ဆင်ရန် မအောင်မြင်ပါ");
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const addEditLine = (item: Item) => {
+    // If item already in lines, increment qty
+    const idx = editLines.findIndex((l) => l.item_id === item.id);
+    if (idx >= 0) {
+      const next = [...editLines];
+      next[idx] = { ...next[idx], qty: next[idx].qty + 1 };
+      setEditLines(next);
+    } else {
+      setEditLines([
+        ...editLines,
+        { item_id: item.id, item_name: item.name, qty: 1, unit_price: item.default_price },
+      ]);
+    }
+  };
+
+  const removeEditLine = (idx: number) => {
+    setEditLines(editLines.filter((_, i) => i !== idx));
+  };
+
+  const updateEditLineQty = (idx: number, qty: number) => {
+    const next = [...editLines];
+    next[idx] = { ...next[idx], qty: Math.max(0, qty) };
+    setEditLines(next);
+  };
+
+  const updateEditLinePrice = (idx: number, price: number) => {
+    const next = [...editLines];
+    next[idx] = { ...next[idx], unit_price: Math.max(0, price) };
+    setEditLines(next);
+  };
+
   // Multi-select helpers
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
@@ -295,19 +416,11 @@ export function SalesContent({ initialSearchTerm }: { initialSearchTerm?: string
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { setSelectedIds(new Set()); }, [dateFrom, dateTo, selectedCustomer, searchTerm]);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20 gap-3">
-        <Loader2 className="w-5 h-5 animate-spin text-[#D6B25E]" />
-        <span className="text-[#9CA3AF]" style={{ fontSize: "0.85rem" }}>
-          ဘောင်ချာဒေတာ ခေါ်ယူနေသည်...
-        </span>
-      </div>
-    );
-  }
 
-  return (
-    <div className="space-y-6">
+
+        return (
+          <div className="space-y-6">
+
       {/* ── Hidden print area ── */}
       {printReceipt && (
         <ReceiptPrint
@@ -316,6 +429,10 @@ export function SalesContent({ initialSearchTerm }: { initialSearchTerm?: string
           date={printReceipt.receipt_date}
           receiptNo={printReceipt.receipt_no}
           items={printLines}
+          subtotal={printReceipt.discount_amount > 0 ? printReceipt.subtotal : undefined}
+          discountAmount={printReceipt.discount_amount > 0 ? printReceipt.discount_amount : undefined}
+          paidAmount={printReceipt.paid_amount > 0 ? printReceipt.paid_amount : undefined}
+          balanceDue={printReceipt.grand_total - printReceipt.paid_amount > 0 ? printReceipt.grand_total - printReceipt.paid_amount : undefined}
           grandTotal={printReceipt.grand_total}
         />
       )}
@@ -493,6 +610,7 @@ export function SalesContent({ initialSearchTerm }: { initialSearchTerm?: string
                     <th className="text-right py-3 px-4 text-[#6B7280]" style={{ fontSize: "0.8rem" }}>{"\u1005\u102f\u1005\u102f\u1015\u1031\u102b\u1004\u103a\u1038"}</th>
                     <th className="text-left py-3 px-4 text-[#6B7280]" style={{ fontSize: "0.8rem" }}>{"\u1019\u103e\u1010\u103a\u1001\u103b\u1000\u103a"}</th>
                     <th className="text-center py-3 px-2 text-[#6B7280]" style={{ fontSize: "0.8rem" }}>{"\u1000\u103c\u100a\u103a\u1037\u1019\u100a\u103a"}</th>
+                    <th className="text-center py-3 px-2 text-[#6B7280]" style={{ fontSize: "0.8rem" }}>{"\u1015\u103c\u1004\u103a\u1019\u100a\u103a"}</th>
                     <th className="text-center py-3 px-2 text-[#6B7280]" style={{ fontSize: "0.8rem" }}>{"\u1015\u101b\u1004\u103a\u1037"}</th>
                     <th className="text-center py-3 px-2 text-[#6B7280]" style={{ fontSize: "0.8rem" }}>{"\u1016\u103b\u1000\u103a\u101b\u1014\u103a"}</th>
                   </tr>
@@ -525,11 +643,21 @@ export function SalesContent({ initialSearchTerm }: { initialSearchTerm?: string
                         <span className="inline-flex items-center justify-center min-w-[60px] px-2.5 py-0.5 rounded-full bg-[#FAF6EC] text-[#B8943C] border border-[#D6B25E]/20" style={{ fontSize: "0.85rem", fontWeight: 600 }}>
                           {formatNumber(r.grand_total)} Ks
                         </span>
+                        {r.grand_total - r.paid_amount > 0 && (
+                          <div className="mt-0.5">
+                            <span className="text-red-500" style={{ fontSize: "0.7rem" }}>ကျန် {formatNumber(r.grand_total - r.paid_amount)} Ks</span>
+                          </div>
+                        )}
                       </td>
                       <td className="py-3.5 px-4 text-[#9CA3AF]" style={{ fontSize: "0.8rem" }}>{r.note || "\u2014"}</td>
                       <td className="py-3.5 px-2 text-center">
                         <button onClick={() => openDetail(r)} className="p-1.5 rounded-[8px] text-[#6B7280] hover:text-[#D6B25E] hover:bg-[#FAF6EC] transition-all cursor-pointer" title={"\u1021\u101e\u1031\u1038\u1005\u102d\u1010\u103a \u1000\u103c\u100a\u103a\u1037\u1019\u100a\u103a"}>
                           <Eye className="w-4 h-4" />
+                        </button>
+                      </td>
+                      <td className="py-3.5 px-2 text-center">
+                        <button onClick={() => openEdit(r)} className="p-1.5 rounded-[8px] text-[#6B7280] hover:text-[#D6B25E] hover:bg-[#FAF6EC] transition-all cursor-pointer" title={"\u1015\u103c\u1004\u103a\u1019\u100a\u103a"}>
+                          <Pencil className="w-4 h-4" />
                         </button>
                       </td>
                       <td className="py-3.5 px-2 text-center">
@@ -568,9 +696,16 @@ export function SalesContent({ initialSearchTerm }: { initialSearchTerm?: string
                         </p>
                       </div>
                     </div>
-                    <span className="inline-flex items-center justify-center min-w-[50px] px-2.5 py-1 rounded-full bg-[#FAF6EC] text-[#B8943C] border border-[#D6B25E]/20 shrink-0 ml-2" style={{ fontSize: "0.9rem", fontWeight: 600 }}>
-                      {formatNumber(r.grand_total)} Ks
-                    </span>
+                    <div className="text-right shrink-0 ml-2">
+                      <span className="inline-flex items-center justify-center min-w-[50px] px-2.5 py-1 rounded-full bg-[#FAF6EC] text-[#B8943C] border border-[#D6B25E]/20" style={{ fontSize: "0.9rem", fontWeight: 600 }}>
+                        {formatNumber(r.grand_total)} Ks
+                      </span>
+                      {r.grand_total - r.paid_amount > 0 && (
+                        <div className="mt-0.5">
+                          <span className="text-red-500" style={{ fontSize: "0.65rem" }}>{"\u1000\u103b\u1014\u103a"} {formatNumber(r.grand_total - r.paid_amount)} Ks</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <div className="grid grid-cols-2 gap-2 mb-3">
                     <div>
@@ -584,15 +719,18 @@ export function SalesContent({ initialSearchTerm }: { initialSearchTerm?: string
                       </div>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 border-t border-[#E5E7EB]/60 pt-2">
-                    <button onClick={() => openDetail(r)} className="flex items-center gap-1 px-3 py-1.5 rounded-[8px] text-[#6B7280] hover:text-[#D6B25E] hover:bg-[#FAF6EC] transition-all cursor-pointer border border-[#E5E7EB]" style={{ fontSize: "0.75rem" }}>
-                      <Eye className="w-3.5 h-3.5" /> {"\u1000\u103c\u100a\u103a\u1037\u1019\u100a\u103a"}
+                  <div className="grid grid-cols-4 gap-1.5 border-t border-[#E5E7EB]/60 pt-2">
+                    <button onClick={() => openDetail(r)} className="flex items-center justify-center gap-1 px-1 py-1.5 rounded-[8px] text-[#6B7280] hover:text-[#D6B25E] hover:bg-[#FAF6EC] transition-all cursor-pointer border border-[#E5E7EB]" style={{ fontSize: "0.65rem" }}>
+                      <Eye className="w-3 h-3 shrink-0" /> {"\u1000\u103c\u100a\u103a\u1037\u1019\u100a\u103a"}
                     </button>
-                    <button onClick={() => handlePrint(r)} className="flex items-center gap-1 px-3 py-1.5 rounded-[8px] text-[#6B7280] hover:text-[#D6B25E] hover:bg-[#FAF6EC] transition-all cursor-pointer border border-[#E5E7EB]" style={{ fontSize: "0.75rem" }}>
-                      <Printer className="w-3.5 h-3.5" /> {"\u1015\u101b\u1004\u103a\u1037"}
+                    <button onClick={() => openEdit(r)} className="flex items-center justify-center gap-1 px-1 py-1.5 rounded-[8px] text-[#6B7280] hover:text-[#D6B25E] hover:bg-[#FAF6EC] transition-all cursor-pointer border border-[#E5E7EB]" style={{ fontSize: "0.65rem" }}>
+                      <Pencil className="w-3 h-3 shrink-0" /> {"\u1015\u103c\u1004\u103a\u1019\u100a\u103a"}
                     </button>
-                    <button onClick={() => setDeleteRow(r)} className="flex items-center gap-1 px-3 py-1.5 rounded-[8px] text-[#6B7280] hover:text-[#DC2626] hover:bg-red-50 transition-all cursor-pointer border border-[#E5E7EB]" style={{ fontSize: "0.75rem" }}>
-                      <Trash2 className="w-3.5 h-3.5" /> {"\u1016\u103b\u1000\u103a\u101b\u1014\u103a"}
+                    <button onClick={() => handlePrint(r)} className="flex items-center justify-center gap-1 px-1 py-1.5 rounded-[8px] text-[#6B7280] hover:text-[#D6B25E] hover:bg-[#FAF6EC] transition-all cursor-pointer border border-[#E5E7EB]" style={{ fontSize: "0.65rem" }}>
+                      <Printer className="w-3 h-3 shrink-0" /> {"\u1015\u101b\u1004\u103a\u1037"}
+                    </button>
+                    <button onClick={() => setDeleteRow(r)} className="flex items-center justify-center gap-1 px-1 py-1.5 rounded-[8px] text-[#6B7280] hover:text-[#DC2626] hover:bg-red-50 transition-all cursor-pointer border border-[#E5E7EB]" style={{ fontSize: "0.65rem" }}>
+                      <Trash2 className="w-3 h-3 shrink-0" /> {"\u1016\u103b\u1000\u103a\u101b\u1014\u103a"}
                     </button>
                   </div>
                 </div>
@@ -679,7 +817,7 @@ export function SalesContent({ initialSearchTerm }: { initialSearchTerm?: string
                     <span className="text-[#1F2937]">{formatNumber(detailReceipt.subtotal)} Ks</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-[#6B7280]">{"\u101c\u103b\u103e\u1031\u102c\u1037\u1005\u1031\u103b\u1038"}</span>
+                    <span className="text-[#6B7280]">{"\u101c\u103b\u103e\u1031\u102c\u1037\u1005\u103b\u1031\u1038"}</span>
                     <span className="text-red-500">-{formatNumber(detailReceipt.discount_amount)} Ks</span>
                   </div>
                 </>
@@ -688,6 +826,18 @@ export function SalesContent({ initialSearchTerm }: { initialSearchTerm?: string
                 <span className="text-[#1F2937]">{"\u1005\u102f\u1005\u102f\u1015\u1031\u102b\u1004\u103a\u1038"}</span>
                 <span className="text-[#B8943C]">{formatNumber(detailReceipt.grand_total)} Ks</span>
               </div>
+              {detailReceipt.paid_amount > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-[#6B7280]">{"\u1015\u1031\u1038\u1004\u103d\u1031"}</span>
+                  <span className="text-[#1F2937]">{formatNumber(detailReceipt.paid_amount)} Ks</span>
+                </div>
+              )}
+              {detailReceipt.grand_total - detailReceipt.paid_amount > 0 && detailReceipt.paid_amount > 0 && (
+                <div className="flex justify-between font-semibold">
+                  <span className="text-red-600">{"\u1000\u103b\u1014\u103a\u1004\u103d\u1031"}</span>
+                  <span className="text-red-600">{formatNumber(detailReceipt.grand_total - detailReceipt.paid_amount)} Ks</span>
+                </div>
+              )}
             </div>
 
             {/* Actions */}
@@ -698,6 +848,166 @@ export function SalesContent({ initialSearchTerm }: { initialSearchTerm?: string
               <button onClick={() => { setDetailReceipt(null); handlePrint(detailReceipt); }} className="flex-1 py-2.5 rounded-[10px] bg-[#D6B25E] text-white hover:bg-[#C4A24D] transition-all cursor-pointer flex items-center justify-center gap-2" style={{ fontSize: "0.85rem" }}>
                 <Printer className="w-4 h-4" />
                 {"\u1015\u101b\u1004\u103a\u1037\u1011\u102f\u1010\u103a\u1019\u100a\u103a"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit Modal ── */}
+      {editReceipt && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setEditReceipt(null)}>
+          <div className="bg-white rounded-[16px] shadow-2xl w-full max-w-lg p-6 space-y-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="text-[#1F2937]">{"\u1018\u1031\u102c\u1004\u103a\u1001\u103b\u102c \u1015\u103c\u1004\u103a\u1019\u100a\u103a"}</h3>
+              <button onClick={() => setEditReceipt(null)} className="p-1 rounded-full hover:bg-[#F3F4F6] cursor-pointer">
+                <X className="w-5 h-5 text-[#6B7280]" />
+              </button>
+            </div>
+
+            {/* Receipt header fields */}
+            <div className="space-y-3">
+              <div className="flex flex-col gap-1">
+                <label className="text-[#6B7280]" style={{ fontSize: "0.75rem" }}>{"\u1018\u1031\u102c\u1004\u103a\u1001\u103b\u102c\u1021\u1019\u103e\u1010\u103a"}</label>
+                <span className="text-[#B8943C] font-medium" style={{ fontSize: "0.85rem" }}>{editReceipt.receipt_no}</span>
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[#6B7280]" style={{ fontSize: "0.75rem" }}>{"\u101b\u1000\u103a\u1005\u103d\u1032"}</label>
+                <input type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)} className="px-3 py-2 rounded-[10px] border border-[#E5E7EB] bg-white text-[#1F2937] focus:outline-none focus:ring-2 focus:ring-[#D6B25E]/30 focus:border-[#D6B25E] transition-all" style={{ fontSize: "0.85rem" }} />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[#6B7280]" style={{ fontSize: "0.75rem" }}>{"\u101d\u101a\u103a\u101a\u1030\u101e\u1030"}</label>
+                <select value={editCustomerId} onChange={(e) => setEditCustomerId(e.target.value)} className="px-3 pr-8 py-2 rounded-[10px] border border-[#E5E7EB] bg-white text-[#1F2937] focus:outline-none focus:ring-2 focus:ring-[#D6B25E]/30 focus:border-[#D6B25E] transition-all cursor-pointer" style={{ fontSize: "0.85rem" }}>
+                  <option value="">{"—"}</option>
+                  {allCustomers.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[#6B7280]" style={{ fontSize: "0.75rem" }}>{"\u1019\u103e\u1010\u103a\u1001\u103b\u1000\u103a"}</label>
+                <input type="text" value={editNote} onChange={(e) => setEditNote(e.target.value)} placeholder={"\u1019\u103e\u1010\u103a\u1001\u103b\u1000\u103a..."} className="px-3 py-2 rounded-[10px] border border-[#E5E7EB] bg-white text-[#1F2937] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#D6B25E]/30 focus:border-[#D6B25E] transition-all" style={{ fontSize: "0.85rem" }} />
+              </div>
+            </div>
+
+            {/* Editable line items */}
+            <div className="border-t border-[#E5E7EB] pt-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[#6B7280] font-medium" style={{ fontSize: "0.8rem" }}>{"\u1015\u1005\u1039\u1005\u100a\u103a\u1038\u1019\u103b\u102c\u1038"}</span>
+              </div>
+
+              {editLoading ? (
+                <div className="flex items-center justify-center py-6 gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin text-[#D6B25E]" />
+                  <span className="text-[#9CA3AF]" style={{ fontSize: "0.8rem" }}>{"\u1001\u1031\u102b\u103a\u101a\u1030\u1014\u1031\u101e\u100a\u103a..."}</span>
+                </div>
+              ) : (
+                <>
+                  {editLines.map((line, idx) => (
+                    <div key={`${line.item_id}-${idx}`} className="rounded-[10px] border border-[#E5E7EB] bg-[#FAFAFA] p-2.5 space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[#1F2937] truncate font-medium flex-1 min-w-0" style={{ fontSize: "0.85rem" }}>{line.item_name}</p>
+                        <button onClick={() => removeEditLine(idx)} className="p-1 rounded-[6px] text-[#9CA3AF] hover:text-[#DC2626] hover:bg-red-50 transition-all cursor-pointer shrink-0" title="ဖယ်ရန်">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <div className="flex items-center gap-0.5 shrink-0">
+                          <button onClick={() => updateEditLineQty(idx, line.qty - 1)} className="w-7 h-7 rounded-[6px] border border-[#E5E7EB] flex items-center justify-center text-[#6B7280] hover:bg-[#FAF6EC] hover:text-[#D6B25E] transition-all cursor-pointer">
+                            <Minus className="w-3.5 h-3.5" />
+                          </button>
+                          <input type="number" value={line.qty} onChange={(e) => updateEditLineQty(idx, parseInt(e.target.value) || 0)} className="w-12 text-center py-1 rounded-[6px] border border-[#E5E7EB] text-[#1F2937] focus:outline-none focus:ring-1 focus:ring-[#D6B25E]/30 focus:border-[#D6B25E]" style={{ fontSize: "0.8rem" }} />
+                          <button onClick={() => updateEditLineQty(idx, line.qty + 1)} className="w-7 h-7 rounded-[6px] border border-[#E5E7EB] flex items-center justify-center text-[#6B7280] hover:bg-[#FAF6EC] hover:text-[#D6B25E] transition-all cursor-pointer">
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        <span className="text-[#9CA3AF] shrink-0" style={{ fontSize: "0.75rem" }}>×</span>
+                        <input type="number" value={line.unit_price} onChange={(e) => updateEditLinePrice(idx, parseInt(e.target.value) || 0)} className="w-16 text-center py-1 rounded-[6px] border border-[#E5E7EB] text-[#6B7280] focus:outline-none focus:ring-1 focus:ring-[#D6B25E]/30 focus:border-[#D6B25E] shrink-0" style={{ fontSize: "0.8rem" }} />
+                        <span className="text-[#9CA3AF] shrink-0" style={{ fontSize: "0.75rem" }}>=</span>
+                        <span className="text-[#B8943C] font-semibold shrink-0 ml-auto whitespace-nowrap" style={{ fontSize: "0.8rem" }}>{formatNumber(line.qty * line.unit_price)} Ks</span>
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Add item dropdown */}
+                  {(() => {
+                    const unusedItems = allItems.filter((item) => !editLines.some((l) => l.item_id === item.id));
+                    if (unusedItems.length === 0) return null;
+                    return (
+                      <select
+                        value=""
+                        onChange={(e) => {
+                          const item = allItems.find((i) => i.id === e.target.value);
+                          if (item) addEditLine(item);
+                        }}
+                        className="w-full px-3 pr-8 py-2 rounded-[10px] border border-dashed border-[#D6B25E]/40 bg-[#FAF6EC]/30 text-[#B8943C] focus:outline-none focus:ring-2 focus:ring-[#D6B25E]/30 focus:border-[#D6B25E] transition-all cursor-pointer"
+                        style={{ fontSize: "0.85rem" }}
+                      >
+                        <option value="">{"\u1015\u1005\u1039\u1005\u100a\u103a\u1038 \u1011\u1015\u103a\u1011\u100a\u103a\u1037\u101b\u1014\u103a..."}</option>
+                        {unusedItems.map((item) => (
+                          <option key={item.id} value={item.id}>{item.name}</option>
+                        ))}
+                      </select>
+                    );
+                  })()}
+                </>
+              )}
+            </div>
+
+            {/* Discount */}
+            <div className="flex items-center gap-2">
+              <label className="text-[#6B7280]" style={{ fontSize: "0.8rem" }}>{"\u101c\u103b\u103e\u1031\u102c\u1037\u1005\u103b\u1031\u1038"}</label>
+              <input type="text" inputMode="numeric" value={editDiscount} onChange={(e) => { const v = e.target.value; if (/^\d*$/.test(v)) setEditDiscount(v); }} placeholder="0" className="w-28 text-center px-3 py-1.5 rounded-[10px] border border-[#E5E7EB] text-[#1F2937] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-1 focus:ring-[#D6B25E]/30 focus:border-[#D6B25E]" style={{ fontSize: "0.85rem" }} />
+              <span className="text-[#9CA3AF]" style={{ fontSize: "0.8rem" }}>Ks</span>
+            </div>
+
+            {/* Paid amount */}
+            <div className="flex items-center gap-2">
+              <label className="text-[#6B7280]" style={{ fontSize: "0.8rem" }}>{"\u1015\u1031\u1038\u1004\u103d\u1031"}</label>
+              <input type="text" inputMode="numeric" value={editPaidStr} onChange={(e) => { const v = e.target.value; if (/^\d*$/.test(v)) setEditPaidStr(v); }} placeholder="0" className="w-28 text-center px-3 py-1.5 rounded-[10px] border border-[#E5E7EB] text-[#1F2937] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-1 focus:ring-[#D6B25E]/30 focus:border-[#D6B25E]" style={{ fontSize: "0.85rem" }} />
+              <span className="text-[#9CA3AF]" style={{ fontSize: "0.8rem" }}>Ks</span>
+            </div>
+
+            {/* Totals */}
+            <div className="border-t border-[#E5E7EB] pt-3 space-y-1">
+              {editDiscountNum > 0 && (
+                <>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-[#6B7280]">{"\u1005\u102f\u1005\u102f\u1015\u1031\u102b\u1004\u103a\u1038\u1004\u103d\u1031"}</span>
+                    <span className="text-[#1F2937]">{formatNumber(editSubtotal)} Ks</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-[#6B7280]">{"\u101c\u103b\u103e\u1031\u102c\u1037\u1005\u103b\u1031\u1038"}</span>
+                    <span className="text-red-500">-{formatNumber(editDiscountNum)} Ks</span>
+                  </div>
+                </>
+              )}
+              <div className="flex justify-between font-semibold">
+                <span className="text-[#1F2937]">{"\u1005\u102f\u1005\u102f\u1015\u1031\u102b\u1004\u103a\u1038"}</span>
+                <span className="text-[#B8943C]">{formatNumber(editGrandTotal)} Ks</span>
+              </div>
+              {editPaidNum > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-[#6B7280]">{"\u1015\u1031\u1038\u1004\u103d\u1031"}</span>
+                  <span className="text-[#1F2937]">{formatNumber(editPaidNum)} Ks</span>
+                </div>
+              )}
+              {editGrandTotal - editPaidNum > 0 && editPaidNum > 0 && (
+                <div className="flex justify-between font-semibold">
+                  <span className="text-red-600">{"\u1000\u103b\u1014\u103a\u1004\u103d\u1031"}</span>
+                  <span className="text-red-600">{formatNumber(editGrandTotal - editPaidNum)} Ks</span>
+                </div>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center gap-3 pt-2">
+              <button onClick={() => setEditReceipt(null)} className="flex-1 py-2.5 rounded-[10px] border border-[#E5E7EB] text-[#6B7280] hover:bg-[#F3F4F6] transition-all cursor-pointer" style={{ fontSize: "0.85rem" }}>
+                {"\u1015\u102d\u1010\u103a\u1019\u100a\u103a"}
+              </button>
+              <button onClick={handleEditSave} disabled={editSaving || editLoading} className="flex-1 py-2.5 rounded-[10px] bg-[#D6B25E] text-white hover:bg-[#C4A24D] transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2" style={{ fontSize: "0.85rem" }}>
+                {editSaving && <Loader2 className="w-4 h-4 animate-spin" />}
+                {"\u101e\u102d\u1019\u103a\u1038\u1019\u100a\u103a"}
               </button>
             </div>
           </div>
@@ -786,6 +1096,7 @@ export function SalesContent({ initialSearchTerm }: { initialSearchTerm?: string
           </div>
         </div>
       )}
+
     </div>
   );
 }

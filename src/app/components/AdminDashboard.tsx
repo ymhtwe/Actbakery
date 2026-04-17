@@ -18,6 +18,7 @@ import {
   ScanBarcode,
   Loader2,
   ShoppingBag,
+  Wallet,
   TrendingUp,
   ArrowUpRight,
   ArrowDownRight,
@@ -37,6 +38,7 @@ import * as db from "./db";
 import { supabase } from "./supabaseClient";
 import { UserManagement } from "./UserManagement";
 import { SalesContent } from "./SalesContent";
+import { PaymentLogContent } from "./PaymentLogContent";
 import { ProductionLogContent } from "./ProductionLogContent";
 import { CustomerManagement } from "./CustomerManagement";
 import { SalesReportContent } from "./SalesReportContent";
@@ -48,6 +50,7 @@ const sidebarItems = [
   { icon: ScanBarcode, label: "မှတ်တမ်းသွင်းရန်", id: "data_entry" },
   { icon: Cake, label: "ကုန်ထုတ်လုပ်မှုမှတ်တမ်း", id: "production_log" },
   { icon: ShoppingBag, label: "အရောင်းမှတ်တမ်း", id: "sales" },
+  { icon: Wallet, label: "အကြွေး မှတ်တမ်း", id: "payment_log" },
   { icon: Package, label: "လက်ကျန်ပစ္စည်း", id: "inventory" },
   { icon: FileBarChart, label: "အစီရင်ခံစာ", id: "reports" },
   { icon: Settings, label: "စနစ်ဆက်တင်", id: "settings" },
@@ -114,6 +117,7 @@ function getDefaultDates(range: string) {
 export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" }) {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("dashboard");
+  const [dataEntryMode, setDataEntryMode] = useState("entry");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // ── Data from API ──
@@ -493,19 +497,24 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
             </button>
             <div className="lg:text-left text-center flex-1 lg:flex-initial">
               <h2 className="text-[#1F2937] capitalize">
-                {activeTab === "dashboard" ? "အနှစ်ချုပ်" : activeTab === "data_entry" ? "မှတ်တမ်းသွင်းရန်" : activeTab === "production_log" ? "ကုန်ထုတ်လုပ်မှုမှတ်တမ်း" : activeTab === "sales" ? "အရောင်းမှတ်တမ်း" : activeTab === "inventory" ? "လက်ကျန်ပစ္စည်း" : activeTab === "reports" ? "အစီရင်ခံစာ" : activeTab === "settings" ? "စနစ်ဆက်တင်" : activeTab}
+                {activeTab === "dashboard" ? "အနှစ်ချုပ်" : activeTab === "data_entry" ? "မှတ်တမ်းသွင်းရန်" : activeTab === "production_log" ? "ကုန်ထုတ်လုပ်မှုမှတ်တမ်း" : activeTab === "sales" ? "အရောင်းမှတ်တမ်း" : activeTab === "payment_log" ? "အကြွေး မှတ်တမ်း" : activeTab === "inventory" ? "လက်ကျန်ပစ္စည်း" : activeTab === "reports" ? "အစီရင်ခံစာ" : activeTab === "settings" ? "စနစ်ဆက်တင်" : activeTab}
               </h2>
               {activeTab === "dashboard" && (
                 <p className="text-[#9CA3AF]" style={{ fontSize: "0.75rem" }}>ထုတ်လုပ်မှုနှင့် လက်ကျန် စီမံခန့်ခွဲမှု</p>
               )}
               {activeTab === "data_entry" && (
-                <p className="text-[#9CA3AF]" style={{ fontSize: "0.75rem" }}>ထုတ်လုပ်မှု မှတ်တမ်းသွင်းရန်</p>
+                <p className="text-[#9CA3AF]" style={{ fontSize: "0.75rem" }}>
+                  {dataEntryMode === "sale" ? "ရောင်းချမှု မှတ်တမ်းသွင်းရန်" : dataEntryMode === "debt_collect" ? "လက်ကျန်ငွေ လက်ခံရန်" : "ထုတ်လုပ်မှု မှတ်တမ်းသွင်းရန်"}
+                </p>
               )}
               {activeTab === "production_log" && (
                 <p className="text-[#9CA3AF]" style={{ fontSize: "0.75rem" }}>ထုတ်လုပ်မှု မှတ်တမ်းများ ကြည့်ရှု/ပြင်ဆင်ရန်</p>
               )}
               {activeTab === "sales" && (
                 <p className="text-[#9CA3AF]" style={{ fontSize: "0.75rem" }}>ရောင်းချမှု မှတ်တမ်းများ</p>
+              )}
+              {activeTab === "payment_log" && (
+                <p className="text-[#9CA3AF]" style={{ fontSize: "0.75rem" }}>အကြွေး လက်ခံမှုများ</p>
               )}
               {activeTab === "inventory" && (
                 <p className="text-[#9CA3AF]" style={{ fontSize: "0.75rem" }}>လက်ကျန်ပစ္စည်း စီမံခန့်ခွဲမှု</p>
@@ -829,6 +838,7 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
                     setActiveTab(tab);
                     if (subTab) setSettingsTab(subTab);
                   }}
+                  onModeChange={(mode) => setDataEntryMode(mode)}
                 />
               </div>
             )}
@@ -843,6 +853,9 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
 
             {/* ═══════ SALES ═══════ */}
             {activeTab === "sales" && <SalesContent initialSearchTerm={pendingSalesSearch} />}
+
+            {/* ═══════ PAYMENT LOG ═══════ */}
+            {activeTab === "payment_log" && <PaymentLogContent />}
 
             {/* ═══════ INVENTORY ═══════ */}
             {activeTab === "inventory" && (
