@@ -22,6 +22,8 @@ import {
   TrendingUp,
   ArrowUpRight,
   ArrowDownRight,
+  ChevronUp,
+  ChevronDown,
 } from "lucide-react";
 import {
   XAxis,
@@ -418,6 +420,22 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
       alert(`Error: ${e.message}`);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleMoveItem = async (index: number, direction: "up" | "down") => {
+    const swapIndex = direction === "up" ? index - 1 : index + 1;
+    if (swapIndex < 0 || swapIndex >= products.length) return;
+    const newProducts = [...products];
+    [newProducts[index], newProducts[swapIndex]] = [newProducts[swapIndex], newProducts[index]];
+    setProducts(newProducts);
+    try {
+      await db.updateItemSortOrders(
+        newProducts.map((p, i) => ({ id: p.id, sort_order: i + 1 })),
+      );
+    } catch (e: any) {
+      console.error("Reorder error:", e);
+      await loadData();
     }
   };
 
@@ -1068,6 +1086,7 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
                     <table className="w-full" style={{ minWidth: "640px" }}>
                       <thead>
                         <tr className="border-b border-[#E5E7EB]">
+                          <th className="text-center py-3 px-2 text-[#6B7280]" style={{ fontSize: "0.85rem", width: "60px" }}>အစဉ်</th>
                           <th className="text-left py-3 px-4 text-[#6B7280]" style={{ fontSize: "0.85rem" }}>ကုန်ပစ္စည်းအမည်</th>
                           <th className="text-center py-3 px-4 text-[#6B7280]" style={{ fontSize: "0.85rem" }}>မူလဈေးနှုန်း</th>
                           <th className="text-center py-3 px-4 text-[#6B7280]" style={{ fontSize: "0.85rem" }}>လက်ရှိလက်ကျန်</th>
@@ -1077,10 +1096,28 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
                         </tr>
                       </thead>
                       <tbody>
-                        {products.map((item) => {
+                        {products.map((item, idx) => {
                           const sc = statusConfig[item.status];
                           return (
                             <tr key={item.id} className="border-b border-[#E5E7EB]/60 hover:bg-[#FAF6EC] transition-colors">
+                              <td className="py-3.5 px-2 text-center">
+                                <div className="flex flex-col items-center gap-0.5">
+                                  <button
+                                    onClick={() => handleMoveItem(idx, "up")}
+                                    disabled={idx === 0}
+                                    className={`p-0.5 rounded transition-all cursor-pointer ${idx === 0 ? "text-[#E5E7EB] cursor-not-allowed" : "text-[#6B7280] hover:text-[#B8943C] hover:bg-[#FAF6EC]"}`}
+                                  >
+                                    <ChevronUp className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleMoveItem(idx, "down")}
+                                    disabled={idx === products.length - 1}
+                                    className={`p-0.5 rounded transition-all cursor-pointer ${idx === products.length - 1 ? "text-[#E5E7EB] cursor-not-allowed" : "text-[#6B7280] hover:text-[#B8943C] hover:bg-[#FAF6EC]"}`}
+                                  >
+                                    <ChevronDown className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              </td>
                               <td className="py-3.5 px-4 text-[#1F2937]">{item.name}</td>
                               <td className="py-3.5 px-4 text-center text-[#1F2937]">{(item.defaultPrice ?? 0).toLocaleString()} ကျပ်</td>
                               <td className={`py-3.5 px-4 text-center ${item.currentStock <= item.lowStockThreshold ? "text-[#DC2626]" : "text-[#1F2937]"}`}>{item.currentStock}</td>
@@ -1120,7 +1157,7 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
                         })}
                         {products.length === 0 && (
                           <tr>
-                            <td colSpan={6} className="py-10 text-center text-[#9CA3AF]">ကုန်ပစ္စည်း မရှိသေးပါ။ "အသစ် ထည့်ရန်" ကို နှိပ်ပါ။</td>
+                            <td colSpan={7} className="py-10 text-center text-[#9CA3AF]">ကုန်ပစ္စည်း မရှိသေးပါ။ "အသစ် ထည့်ရန်" ကို နှိပ်ပါ။</td>
                           </tr>
                         )}
                       </tbody>
@@ -1129,12 +1166,30 @@ export function AdminDashboard({ role = "admin" }: { role?: "admin" | "staff" })
 
                   {/* Mobile card list */}
                   <div className="md:hidden space-y-3">
-                    {products.map((item) => {
+                    {products.map((item, idx) => {
                       const sc = statusConfig[item.status];
                       return (
                         <div key={item.id} className="border border-[#E5E7EB] rounded-[12px] p-4">
                           <div className="flex items-center justify-between mb-3">
-                            <span className="text-[#1F2937]" style={{ fontSize: "1rem" }}>{item.name}</span>
+                            <div className="flex items-center gap-2">
+                              <div className="flex flex-col gap-0.5">
+                                <button
+                                  onClick={() => handleMoveItem(idx, "up")}
+                                  disabled={idx === 0}
+                                  className={`p-0.5 rounded transition-all cursor-pointer ${idx === 0 ? "text-[#E5E7EB] cursor-not-allowed" : "text-[#6B7280] hover:text-[#B8943C] hover:bg-[#FAF6EC]"}`}
+                                >
+                                  <ChevronUp className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => handleMoveItem(idx, "down")}
+                                  disabled={idx === products.length - 1}
+                                  className={`p-0.5 rounded transition-all cursor-pointer ${idx === products.length - 1 ? "text-[#E5E7EB] cursor-not-allowed" : "text-[#6B7280] hover:text-[#B8943C] hover:bg-[#FAF6EC]"}`}
+                                >
+                                  <ChevronDown className="w-4 h-4" />
+                                </button>
+                              </div>
+                              <span className="text-[#1F2937]" style={{ fontSize: "1rem" }}>{item.name}</span>
+                            </div>
                             <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border ${sc.bg} ${sc.text} ${sc.border}`} style={{ fontSize: "0.7rem" }}>
                               <span className={`w-1.5 h-1.5 rounded-full ${sc.dot}`} />
                               {sc.label}

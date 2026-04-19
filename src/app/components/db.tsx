@@ -12,6 +12,7 @@ export interface Item {
   low_stock_threshold: number;
   default_price: number;
   is_active: boolean;
+  sort_order: number;
   created_at: string;
 }
 
@@ -108,6 +109,7 @@ export async function getItems(): Promise<Item[]> {
   const { data, error } = await supabase
     .from("items")
     .select("*")
+    .order("sort_order", { ascending: true })
     .order("created_at", { ascending: true });
   if (error) throw new Error(`Failed to load items: ${error.message}`);
   return data || [];
@@ -118,9 +120,18 @@ export async function createItem(
   low_stock_threshold: number,
   default_price: number = 0,
 ): Promise<Item> {
+  // Get the next sort_order value
+  const { data: maxRow } = await supabase
+    .from("items")
+    .select("sort_order")
+    .order("sort_order", { ascending: false })
+    .limit(1)
+    .single();
+  const nextOrder = (maxRow?.sort_order ?? 0) + 1;
+
   const { data, error } = await supabase
     .from("items")
-    .insert({ name, low_stock_threshold, default_price, is_active: true })
+    .insert({ name, low_stock_threshold, default_price, is_active: true, sort_order: nextOrder })
     .select()
     .single();
   if (error) throw new Error(`Failed to create item: ${error.message}`);
@@ -157,6 +168,19 @@ export async function getItemUsage(id: string): Promise<{ productionCount: numbe
 export async function deleteItem(id: string): Promise<void> {
   const { error } = await supabase.from("items").delete().eq("id", id);
   if (error) throw new Error(`Failed to delete item: ${error.message}`);
+}
+
+export async function updateItemSortOrders(
+  updates: { id: string; sort_order: number }[],
+): Promise<void> {
+  // Update each item's sort_order individually
+  for (const { id, sort_order } of updates) {
+    const { error } = await supabase
+      .from("items")
+      .update({ sort_order })
+      .eq("id", id);
+    if (error) throw new Error(`Failed to update sort order: ${error.message}`);
+  }
 }
 
 // ════════════════════════════════════
@@ -835,6 +859,7 @@ export async function getDailyProduction(days?: number) {
     .from("items")
     .select("id, name")
     .eq("is_active", true)
+    .order("sort_order", { ascending: true })
     .order("created_at", { ascending: true });
   if (itemsErr) throw new Error(`Failed to load items: ${itemsErr.message}`);
 

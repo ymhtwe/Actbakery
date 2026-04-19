@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   Search,
   Loader2,
@@ -39,7 +39,11 @@ function formatNumber(n: number) {
 export function PaymentLogContent() {
   const [paymentLogs, setPaymentLogs] = useState<ReceiptPaymentWithInfo[]>([]);
   const [paymentLogLoading, setPaymentLogLoading] = useState(false);
-  const [paymentLogSearch, setPaymentLogSearch] = useState("");
+  const [customerSearch, setCustomerSearch] = useState("");
+  const [receiptSearch, setReceiptSearch] = useState("");
+  const [customerDropOpen, setCustomerDropOpen] = useState(false);
+  const [receiptDropOpen, setReceiptDropOpen] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<"all" | "outstanding" | "paid">("all");
   const [plSelectedIds, setPlSelectedIds] = useState<Set<string>>(new Set());
   const [plDeleteRow, setPlDeleteRow] = useState<ReceiptPaymentWithInfo | null>(null);
   const [plDeleting, setPlDeleting] = useState(false);
@@ -66,16 +70,59 @@ export function PaymentLogContent() {
     loadPaymentLogs();
   }, [loadPaymentLogs]);
 
+  // Refs for click-outside closing
+  const customerDropRef = useRef<HTMLDivElement>(null);
+  const receiptDropRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (customerDropRef.current && !customerDropRef.current.contains(e.target as Node)) setCustomerDropOpen(false);
+      if (receiptDropRef.current && !receiptDropRef.current.contains(e.target as Node)) setReceiptDropOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  // Unique customer names for suggestions
+  const customerSuggestions = useMemo(() => {
+    const names = [...new Set(paymentLogs.map((p) => p.customer_name))].sort();
+    if (!customerSearch.trim()) return names;
+    const q = customerSearch.toLowerCase();
+    return names.filter((n) => n.toLowerCase().includes(q));
+  }, [paymentLogs, customerSearch]);
+
+  // Unique receipt numbers for suggestions
+  const receiptSuggestions = useMemo(() => {
+    const nums = [...new Set(paymentLogs.map((p) => p.receipt_no))].sort();
+    if (!receiptSearch.trim()) return nums;
+    const q = receiptSearch.toLowerCase();
+    return nums.filter((n) => n.toLowerCase().includes(q));
+  }, [paymentLogs, receiptSearch]);
+
   const filteredPaymentLogs = useMemo(() => {
-    if (!paymentLogSearch.trim()) return paymentLogs;
-    const q = paymentLogSearch.toLowerCase();
-    return paymentLogs.filter(
-      (p) =>
-        p.receipt_no.toLowerCase().includes(q) ||
-        p.customer_name.toLowerCase().includes(q) ||
-        (p.note && p.note.toLowerCase().includes(q)),
-    );
-  }, [paymentLogs, paymentLogSearch]);
+    let result = paymentLogs;
+
+    // Status filter
+    if (statusFilter === "outstanding") {
+      result = result.filter((p) => p.grand_total - p.receipt_paid_amount > 0);
+    } else if (statusFilter === "paid") {
+      result = result.filter((p) => p.grand_total - p.receipt_paid_amount <= 0);
+    }
+
+    // Customer name filter
+    if (customerSearch.trim()) {
+      const q = customerSearch.toLowerCase();
+      result = result.filter((p) => p.customer_name.toLowerCase().includes(q));
+    }
+
+    // Receipt number filter
+    if (receiptSearch.trim()) {
+      const q = receiptSearch.toLowerCase();
+      result = result.filter((p) => p.receipt_no.toLowerCase().includes(q));
+    }
+
+    return result;
+  }, [paymentLogs, customerSearch, receiptSearch, statusFilter]);
 
   const plIsAllSelected = filteredPaymentLogs.length > 0 && plSelectedIds.size === filteredPaymentLogs.length;
   const plIsSomeSelected = plSelectedIds.size > 0 && plSelectedIds.size < filteredPaymentLogs.length;
@@ -130,17 +177,91 @@ export function PaymentLogContent() {
 
   return (
     <div className="space-y-4">
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9CA3AF]" />
-        <input
-          type="text"
-          placeholder={"\u1018\u1031\u102c\u1004\u103a\u1001\u103b\u102c / \u101d\u101a\u103a\u101a\u1030\u101e\u1030 / \u1019\u103e\u1010\u103a\u1001\u103b\u1000\u103a \u101b\u103e\u102c\u101b\u1014\u103a..."}
-          value={paymentLogSearch}
-          onChange={(e) => setPaymentLogSearch(e.target.value)}
-          className="w-full pl-10 pr-4 py-3 rounded-[12px] border border-[#E5E7EB] bg-white text-[#1F2937] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#D6B25E]/30 focus:border-[#D6B25E] transition-all"
-          style={{ fontSize: "0.9rem" }}
-        />
+      {/* Status filter tabs */}
+      <div className="flex gap-2">
+        {([
+          { id: "all" as const, label: "အားလုံး" },
+          { id: "outstanding" as const, label: "အကြွေးကျန်" },
+          { id: "paid" as const, label: "အကြွေးဆပ်ပီး" },
+        ]).map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => { setStatusFilter(tab.id); setPlSelectedIds(new Set()); }}
+            className={`px-3 py-2 rounded-[10px] transition-all cursor-pointer whitespace-nowrap ${
+              statusFilter === tab.id
+                ? "bg-[#FAF6EC] text-[#B8943C] border border-[#D6B25E]/30"
+                : "text-[#6B7280] hover:text-[#1F2937] border border-transparent hover:border-[#E5E7EB]"
+            }`}
+            style={{ fontSize: "0.8rem" }}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Search filters */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {/* Customer name search with dropdown */}
+        <div ref={customerDropRef} className="relative">
+          <label className="block text-[#6B7280] mb-1" style={{ fontSize: "0.75rem" }}>ဝယ်သူအမည်</label>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9CA3AF]" />
+            <input
+              type="text"
+              placeholder="ဝယ်သူအမည် ရှာရန်..."
+              value={customerSearch}
+              onChange={(e) => { setCustomerSearch(e.target.value); setCustomerDropOpen(true); }}
+              onFocus={() => setCustomerDropOpen(true)}
+              className="w-full pl-9 pr-4 py-2.5 rounded-[10px] border border-[#E5E7EB] bg-white text-[#1F2937] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#D6B25E]/30 focus:border-[#D6B25E] transition-all"
+              style={{ fontSize: "0.85rem" }}
+            />
+          </div>
+          {customerDropOpen && customerSuggestions.length > 0 && (
+            <div className="absolute z-20 left-0 right-0 top-full mt-1 bg-white border border-[#E5E7EB] rounded-[10px] shadow-lg max-h-48 overflow-y-auto">
+              {customerSuggestions.map((name) => (
+                <button
+                  key={name}
+                  onClick={() => { setCustomerSearch(name); setCustomerDropOpen(false); }}
+                  className="w-full text-left px-4 py-2.5 text-[#1F2937] hover:bg-[#FAF6EC] transition-colors cursor-pointer"
+                  style={{ fontSize: "0.85rem" }}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Receipt number search with dropdown */}
+        <div ref={receiptDropRef} className="relative">
+          <label className="block text-[#6B7280] mb-1" style={{ fontSize: "0.75rem" }}>ဘောင်ချာနံပါတ်</label>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9CA3AF]" />
+            <input
+              type="text"
+              placeholder="ဘောင်ချာ ရှာရန်..."
+              value={receiptSearch}
+              onChange={(e) => { setReceiptSearch(e.target.value); setReceiptDropOpen(true); }}
+              onFocus={() => setReceiptDropOpen(true)}
+              className="w-full pl-9 pr-4 py-2.5 rounded-[10px] border border-[#E5E7EB] bg-white text-[#1F2937] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#D6B25E]/30 focus:border-[#D6B25E] transition-all"
+              style={{ fontSize: "0.85rem" }}
+            />
+          </div>
+          {receiptDropOpen && receiptSuggestions.length > 0 && (
+            <div className="absolute z-20 left-0 right-0 top-full mt-1 bg-white border border-[#E5E7EB] rounded-[10px] shadow-lg max-h-48 overflow-y-auto">
+              {receiptSuggestions.map((num) => (
+                <button
+                  key={num}
+                  onClick={() => { setReceiptSearch(num); setReceiptDropOpen(false); }}
+                  className="w-full text-left px-4 py-2.5 text-[#1F2937] hover:bg-[#FAF6EC] transition-colors cursor-pointer"
+                  style={{ fontSize: "0.85rem" }}
+                >
+                  {num}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Select all / bulk actions */}
