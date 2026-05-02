@@ -535,6 +535,29 @@ export async function getSalesReceiptLines(receiptId: string): Promise<SalesRece
 }
 
 /**
+ * Fetch ALL receipt lines joined with receipt header to get receipt_date.
+ * Used for item-level sales analytics.
+ */
+export interface SalesReceiptLineWithDate extends SalesReceiptLine {
+  receipt_date: string;
+  receipt_status: string;
+}
+
+export async function getAllSalesReceiptLinesWithDate(): Promise<SalesReceiptLineWithDate[]> {
+  const { data, error } = await supabase
+    .from("sales_receipt_lines")
+    .select("*, sales_receipts(receipt_date, status)");
+  if (error) throw new Error(`Failed to load all receipt lines: ${error.message}`);
+  return (data || [])
+    .filter((row: any) => row.sales_receipts !== null)
+    .map((row: any) => ({
+      ...row,
+      receipt_date: row.sales_receipts?.receipt_date || "",
+      receipt_status: row.sales_receipts?.status || "posted",
+    }));
+}
+
+/**
  * Delete a sales receipt and its lines (lines have FK cascade, but delete lines first to be safe).
  */
 export async function deleteSalesReceipt(id: string): Promise<void> {
